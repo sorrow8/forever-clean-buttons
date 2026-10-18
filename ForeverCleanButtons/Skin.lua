@@ -246,20 +246,10 @@ function STYLE.action(button)
 	Fit(button, button.chargeCooldown, inner)
 end
 
--- An empty bag slot shows a blurry placeholder picture: hidden, the dark
--- square says "empty" on its own. The backpack and the key ring always have
--- their own picture.
-local function BagEmpty(button)
-	local name = button:GetName() or ""
-	if not name:match("^Character.*Slot$") then return false end
-	local slot = button:GetID()
-	return not (slot and slot > 0 and GetInventoryItemTexture("player", slot))
-end
-
+-- Bag pictures, the empty slot placeholder included, are cropped like any
+-- icon.
 local function BagIcon(button)
-	local icon = button.icon
-	icon:SetAlpha(BagEmpty(button) and 0 or 1)
-	icon:SetTexCoord(ns.Crop())
+	button.icon:SetTexCoord(ns.Crop())
 end
 
 function STYLE.bag(button)
