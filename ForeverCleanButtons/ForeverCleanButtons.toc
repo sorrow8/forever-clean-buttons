@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: Forever Clean Buttons
+## Notes: Square, sharp action buttons with a thin border, for Dominos or the default bars. Settings window: /fcb
+## Notes-ruRU: Квадратные чёткие кнопки с тонкой рамкой, для Dominos или стандартных панелей. Окно настроек: /fcb
+## Author: sorrow8
+## Version: 1.0.0
+## OptionalDeps: Dominos
+## SavedVariables: ForeverCleanButtonsDB
+## IconTexture: Interface\Icons\INV_Misc_Gem_Pearl_04
+## AddonCompartmentFunc: ForeverCleanButtons_OnCompartmentClick
+## Category: Action Bars
+
+Locales.lua
+Locales\ruRU.lua
+Core.lua
+Skin.lua
+UI.lua
