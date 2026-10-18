@@ -372,9 +372,12 @@ local function AtSelf(target)
 	local name, realm = target:match("^(.-)%-(.+)$")
 	if name then
 		local own = GetNormalizedRealmName and GetNormalizedRealmName()
-		return name == UnitName("player") and (own == nil or realm == own)
+		if own ~= nil and realm ~= own then return false end
+		target = name
 	end
-	return target == UnitName("player")
+	-- Forever adds a surname to the name ("Adibas Originals")
+	local me = UnitName("player")
+	return target == me or target:sub(1, #me + 1) == me .. " "
 end
 
 -- The last casts and what became of them, for /fcb debug.

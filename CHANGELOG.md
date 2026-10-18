@@ -1,6 +1,7 @@
 # 1.2.0
 
 - A button whose buff is on you gets a green frame.
+- Fix: a recast on yourself was not recognised because Forever adds your surname to the cast target ("Adibas Originals"); now it is, so the timer restarts at once in combat.
 - In combat the game refuses addons the buff data, but its aura updates still name the buffs that changed: a recast of a buff you have restarts its timer from the full duration at once, and a buff that is removed takes its timer and frame with it.
 - Out of combat the timers come from the game's live buff duration.
 - /fcb debug also shows the live state of each known buff and the last aura update.
