@@ -116,7 +116,9 @@ end
 local function Live(inst)
 	if not inst or not (C_UnitAuras and C_UnitAuras.GetAuraDuration) then return nil end
 	local ok, duration = pcall(C_UnitAuras.GetAuraDuration, "player", inst)
-	if not ok or not duration then return "gone" end
+	-- refused (the game may not hand it to addons in combat): nothing learned,
+	-- the timers known before stay
+	if not ok or not duration then return nil end
 	local okLeft, left = pcall(duration.GetRemainingDuration, duration)
 	if okLeft and type(left) == "number" and not Secret(left) then
 		if left <= 0 then return "gone" end
