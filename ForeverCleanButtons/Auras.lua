@@ -14,7 +14,7 @@ local _, ns = ...
 -- when you cast one of your own buffs on yourself, its timer starts again from
 -- the full duration seen the last time it was read.
 
-local UPDATE = 1 -- seconds between text updates while a timer is shown
+local UPDATE = 0.2 -- seconds between text updates while a timer is shown, so a new second shows on time
 local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the button height, limits
 
 local texts = {}  -- [button] = FontString
@@ -91,7 +91,8 @@ end
 function ns.FormatAuraTime(left)
 	if left >= 3600 then return ("%dh"):format(math.ceil(left / 3600)) end
 	if left >= 60 then return ("%dm"):format(math.ceil(left / 60)) end
-	return ("%ds"):format(math.ceil(left))
+	-- seconds round down and minutes up, as on the game's own buff icons
+	return ("%ds"):format(math.floor(left))
 end
 
 local function Text(button)

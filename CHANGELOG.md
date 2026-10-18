@@ -1,6 +1,7 @@
 # 1.1.2
 
 - Recasting a buff on yourself in combat restarts its timer from the full duration, instead of counting down the old one.
+- Buff timers round seconds the way the game's buff icons do and switch to the new second on time, so they no longer show one second more.
 
 # 1.1.1
 
