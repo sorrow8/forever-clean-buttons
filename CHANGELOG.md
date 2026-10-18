@@ -1,3 +1,8 @@
+# 1.2.0
+
+- A button whose buff is on you gets a green frame.
+- Buff timers read the game's live duration of the buff (C_UnitAuras.GetAuraDuration), which works in combat too: a recast shows its new time at once. Where the game hides the time, the frame still shows the buff is on and the last known time keeps counting.
+
 # 1.1.2
 
 - Recasting a buff on yourself in combat restarts its timer from the full duration, instead of counting down the old one.

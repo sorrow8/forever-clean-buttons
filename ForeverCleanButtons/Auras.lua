@@ -13,16 +13,27 @@ local _, ns = ...
 -- Recasting a buff in combat can't be read either, but the cast itself can:
 -- when you cast one of your own buffs on yourself, its timer starts again from
 -- the full duration seen the last time it was read.
+--
+-- On top of that each buff's aura instance is remembered out of combat. The
+-- game hands out a live duration for an instance even in combat
+-- (C_UnitAuras.GetAuraDuration): if it still exists the buff is on, and when
+-- its time can be read it is the exact time, recasts included.
+--
+-- A button whose buff is on you gets a coloured frame.
 
 local FAST, SLOW = 0.2, 1 -- seconds between updates: while seconds show (a new one on time), or only minutes
 local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the button height, limits
 
 local texts = {}  -- [button] = FontString
+local holders = {} -- [button] = the frame holding its text and coloured frame
 local byId = {}   -- [spellId] = expirationTime
 local byName = {} -- [spell name] = expirationTime
 local durationById = {}   -- [spellId] = full duration, kept for recasts in combat
 local durationByName = {} -- [spell name] = full duration
 local sentTo = {}         -- [castGUID] = who the cast was aimed at
+local instById = {}       -- [spellId] = aura instance ID, read out of combat
+local instByName = {}     -- [spell name] = aura instance ID
+local GLOW = { 0.35, 0.95, 0.45, 1 } -- the frame of a button whose buff is on you
 local ticker
 
 local function DB() return ns.DB() end
@@ -43,7 +54,7 @@ end
 local function Scan()
 	if InCombatLockdown() then return false end
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
-	local ids, names = {}, {}
+	local ids, names, insts, instNames = {}, {}, {}, {}
 	local hidden = false
 	for i = 1, 255 do
 		local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
@@ -55,6 +66,11 @@ local function Scan()
 		elseif source == "player" and expires and expires > 0 then
 			if id then ids[id] = expires end
 			if name then names[name] = expires end
+			local inst = aura.auraInstanceID
+			if inst and not Secret(inst) then
+				if id then insts[id] = inst end
+				if name then instNames[name] = inst end
+			end
 			if duration and duration > 0 then
 				if id then durationById[id] = duration end
 				if name then durationByName[name] = duration end
@@ -66,8 +82,10 @@ local function Scan()
 		local now = GetTime()
 		for k, v in pairs(byId) do if ids[k] == nil and v > now then ids[k] = v end end
 		for k, v in pairs(byName) do if names[k] == nil and v > now then names[k] = v end end
+		for k, v in pairs(instById) do if insts[k] == nil then insts[k] = v end end
+		for k, v in pairs(instByName) do if instNames[k] == nil then instNames[k] = v end end
 	end
-	byId, byName = ids, names
+	byId, byName, instById, instByName = ids, names, insts, instNames
 	return true
 end
 
@@ -88,6 +106,22 @@ local function ButtonSpell(button)
 	end
 end
 
+-- The live duration of a remembered aura instance: "on" with the exact end
+-- time when the game lets it be read, "on" without a time when it doesn't,
+-- "gone" when the instance no longer exists, nil when there is no way to ask.
+local function Live(inst)
+	if not inst or not (C_UnitAuras and C_UnitAuras.GetAuraDuration) then return nil end
+	local ok, duration = pcall(C_UnitAuras.GetAuraDuration, "player", inst)
+	if not ok or not duration then return "gone" end
+	local okLeft, left = pcall(duration.GetRemainingDuration, duration)
+	if okLeft and type(left) == "number" and not Secret(left) then
+		if left <= 0 then return "gone" end
+		return "on", GetTime() + left
+	end
+	return "on"
+end
+
+-- When the button's buff ends (nil: not known) and whether it is on you.
 -- By spell ID or by name, whichever is later: a recast of another rank in
 -- combat only updates the name.
 local function Expires(button)
@@ -95,9 +129,12 @@ local function Expires(button)
 	if not spell then return end
 	local name = SpellName(spell)
 	if Secret(name) then name = nil end
+	local state, exact = Live(instById[spell] or (name and instByName[name]))
+	if exact then return exact, true end
 	local a, b = byId[spell], name and byName[name]
-	if a and b then return math.max(a, b) end
-	return a or b
+	local known = (a and b) and math.max(a, b) or a or b
+	if state == "on" then return known, true end
+	return known, known ~= nil and known > GetTime()
 end
 
 -- Showing ----------------------------------------------------------------------------
@@ -133,9 +170,35 @@ local function Text(button)
 		holder:SetScript("OnSizeChanged", Resize)
 		-- a bar that shows up later (in combat only, after Alt+Z) gets its timers
 		holder:SetScript("OnShow", function() ns.QueueAuraTimers() end)
+		-- the coloured frame of a buff that is on you, inside the button's edge
+		holders[button] = holder
+		holder.glow = {}
+		for i, side in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
+			local t = holder:CreateTexture(nil, "OVERLAY")
+			t:SetColorTexture(GLOW[1], GLOW[2], GLOW[3], GLOW[4])
+			t:SetPoint(side[1])
+			t:SetPoint(side[2])
+			t.horizontal = i <= 2
+			t:Hide()
+			holder.glow[i] = t
+		end
 		texts[button] = fs
 	end
 	return fs
+end
+
+-- Two screen pixels wide, whatever the bar's scale.
+local function Glow(button, on)
+	local holder = holders[button]
+	if not holder or not holder.glow then return end
+	local px = 1
+	if PixelUtil and PixelUtil.GetPixelToUIUnitFactor then
+		px = PixelUtil.GetPixelToUIUnitFactor() / button:GetEffectiveScale()
+	end
+	for _, t in ipairs(holder.glow) do
+		if t.horizontal then t:SetHeight(2 * px) else t:SetWidth(2 * px) end
+		if on then t:Show() else t:Hide() end
+	end
 end
 
 local Update
@@ -162,8 +225,12 @@ Update = function()
 	local on = DB() and DB().auraTimers
 	local now = GetTime()
 	local soonest
+	local active = false
 	for button, fs in pairs(texts) do
-		local expires = on and button:IsVisible() and Expires(button)
+		local expires, isOn
+		if on and button:IsVisible() then expires, isOn = Expires(button) end
+		Glow(button, isOn)
+		if isOn then active = true end
 		local left = expires and expires - now
 		if left and left > 0 then
 			local text = ns.FormatAuraTime(left)
@@ -177,7 +244,9 @@ Update = function()
 			fs:Hide()
 		end
 	end
-	if soonest then StartTicker(soonest < 90 and FAST or SLOW) else StopTicker() end
+	if soonest then StartTicker(soonest < 90 and FAST or SLOW)
+	elseif active then StartTicker(SLOW) -- a buff on you with no readable time: watch it end
+	else StopTicker() end
 end
 ns.UpdateAuraTimers = Update
 
@@ -266,7 +335,7 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_FAILED_QUIET" or event == "UNIT_SPELLCAST_INTERRUPTED" then
 		if not Secret(a) and a then sentTo[a] = nil end
 	elseif event == "UNIT_AURA" then
-		if InCombatLockdown() then return end
+		if InCombatLockdown() then return Queue() end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
 		wipe(sentTo) -- casts that never reported back

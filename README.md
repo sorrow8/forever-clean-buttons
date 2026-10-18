@@ -8,7 +8,7 @@ Square, sharp action buttons with a thin pixel border, for **World of Warcraft: 
 - Bag and menu buttons get the same look, each can be turned off
 - Border thickness, border colour and icon zoom, with a live preview
 - Everything applies at once; turning the addon off brings the usual look back
-- Buff timers: your own buffs show how long they have left on their spell's button (a separate option, works with the square look on or off; in combat the time keeps counting from before the fight, and recasting a buff on yourself starts it again)
+- Buff timers: your own buffs show how long they have left on their spell's button (a separate option, works with the square look on or off; in combat the time keeps counting from before the fight, and recasting a buff on yourself starts it again); a button whose buff is on you gets a green frame
 - Settings: `/fcb`
 
 Made for Dominos. It also works with the default bars; for the cleanest look there, turn on "Hide Bar Art" for the main bar in Edit Mode.
