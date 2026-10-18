@@ -406,7 +406,7 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_FAILED_QUIET" or event == "UNIT_SPELLCAST_INTERRUPTED" then
 		if not Secret(a) and a then sentTo[a] = nil end
 	elseif event == "UNIT_AURA" then
-		ns.NoteAuraUpdate(a)
+		pcall(ns.NoteAuraUpdate, a) -- a note for /fcb debug must never break anything
 		if InCombatLockdown() then return Queue() end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
@@ -430,9 +430,14 @@ ns.OnChange(Update)
 
 -- What the last aura update said, for /fcb debug.
 local lastUpdate = "none yet"
+local function Hidden(v)
+	return Secret(v) or (issecrettable and issecrettable(v))
+end
+
 function ns.NoteAuraUpdate(info)
-	if type(info) ~= "table" or Secret(info) then lastUpdate = "no details"; return end
+	if type(info) ~= "table" or Hidden(info) then lastUpdate = "no details"; return end
 	local function ids(list)
+		if Hidden(list) then return "<secret>" end
 		if type(list) ~= "table" then return "-" end
 		local out = {}
 		for _, v in ipairs(list) do
