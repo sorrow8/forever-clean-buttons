@@ -620,6 +620,8 @@ function ns.ToggleWindow()
 	if win:IsShown() then win:Hide() else win:Show() end
 end
 
+local options -- the game's Options page, re-labelled on a language switch
+
 -- After a language change: drop the old window and build it again in the
 -- new language, at the same place and with the same visibility.
 function ns.RebuildWindow()
@@ -637,8 +639,6 @@ function ns.RebuildWindow()
 end
 
 -- The game's Options: a page with one button that opens the window.
-local options -- the game's Options page, re-labelled on a language switch
-
 local function RegisterOptions()
 	if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then return end
 	local panel = CreateFrame("Frame")

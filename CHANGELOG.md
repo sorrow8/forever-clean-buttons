@@ -1,5 +1,6 @@
 # 1.1.1
 
+- The addon's page in the game's Options now switches language together with the window.
 - Buff timers sit in the centre of the button in a bigger font that follows the button size.
 - Buff timers listen to your own buffs only and update once per page turn instead of once per button.
 - Turning the skin off now brings back the game's current button art, also after Edit Mode changes.
