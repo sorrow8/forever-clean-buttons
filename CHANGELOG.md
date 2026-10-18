@@ -6,6 +6,7 @@
 - A recast of another rank of the same buff updates every button with that buff.
 - Timers update often only while seconds are shown and set the text only when it changes.
 - Casts with a hidden target no longer risk a Lua error; failed casts are cleaned up.
+- A recast aimed at your name with the realm attached ("Name-Realm") is recognised as a recast on yourself.
 
 # 1.1.1
 

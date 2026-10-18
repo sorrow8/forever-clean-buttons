@@ -116,6 +116,8 @@ local function Command(msg)
 		ns.SetEnabled(not db.enabled)
 	elseif cmd == "lang" and (arg == "auto" or ns.LanguageCode(arg)) then
 		ns.SetLanguage(arg ~= "auto" and ns.LanguageCode(arg) or nil)
+	elseif cmd == "debug" then
+		ns.DebugAuras()
 	elseif cmd == "reset" then
 		ns.Reset()
 	else

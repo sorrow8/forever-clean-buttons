@@ -207,18 +207,29 @@ local function AtSelf(target)
 		return not (UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player"))
 	end
 	if target == nil or target == "" then return true end
-	return target == UnitName("player")
+	-- the name may come with the realm ("Name-Realm")
+	return target == UnitName("player") or target:match("^(.-)%-") == UnitName("player")
+end
+
+-- The last casts and what became of them, for /fcb debug.
+local castLog = {}
+local function Log(...)
+	table.insert(castLog, 1, strjoin(" ", tostringall(...)))
+	castLog[6] = nil
 end
 
 local function Recast(castGUID, spellId)
 	local target = sentTo[castGUID]
 	sentTo[castGUID] = nil
-	if Secret(spellId) then return end
+	if Secret(spellId) then return Log("secret spell") end
 	local name = SpellName(spellId)
 	if Secret(name) then name = nil end
 	-- only your own buffs have a known duration; anything else stops here
 	local duration = durationById[spellId] or (name and durationByName[name])
-	if not duration or not AtSelf(target) then return end
+	local shownTarget = Secret(target) and "<secret>" or target
+	if not duration then return Log(spellId, name, "to", shownTarget, "- no known duration") end
+	if not AtSelf(target) then return Log(spellId, name, "to", shownTarget, "- not at you") end
+	Log(spellId, name, "to", shownTarget, "- restarted at", duration)
 	local expires = GetTime() + duration
 	byId[spellId] = expires
 	if name then byName[name] = expires end
@@ -256,3 +267,10 @@ for _, event in ipairs({
 end
 
 ns.OnChange(Update)
+
+function ns.DebugAuras()
+	ns.Print(("in combat: %s, your name: %s"):format(tostring(InCombatLockdown()), tostring(UnitName("player"))))
+	for id, d in pairs(durationById) do ns.Print(("known: %s %s = %ss"):format(id, tostring(SpellName(id)), d)) end
+	for i, line in ipairs(castLog) do ns.Print(i .. ". " .. line) end
+	if not castLog[1] then ns.Print("no casts of your own buffs seen yet") end
+end
