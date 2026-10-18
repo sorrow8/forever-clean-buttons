@@ -1,7 +1,11 @@
 # 1.1.2
 
 - Recasting a buff on yourself in combat restarts its timer from the full duration, instead of counting down the old one.
-- Buff timers round seconds the way the game's buff icons do and switch to the new second on time, so they no longer show one second more.
+- Buff timers show time the way the game's buff icons do (seconds up to 90 s, minutes up to 90 m, seconds rounded down) and switch to the new second on time, so they no longer show one second more.
+- Where the game hides buff data out of combat too (battlegrounds, arenas, keystones) the last known timers stay instead of vanishing.
+- A recast of another rank of the same buff updates every button with that buff.
+- Timers update often only while seconds are shown and set the text only when it changes.
+- Casts with a hidden target no longer risk a Lua error; failed casts are cleaned up.
 
 # 1.1.1
 

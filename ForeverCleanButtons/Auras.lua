@@ -14,7 +14,7 @@ local _, ns = ...
 -- when you cast one of your own buffs on yourself, its timer starts again from
 -- the full duration seen the last time it was read.
 
-local UPDATE = 0.2 -- seconds between text updates while a timer is shown, so a new second shows on time
+local FAST, SLOW = 0.2, 1 -- seconds between updates: while seconds show (a new one on time), or only minutes
 local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the button height, limits
 
 local texts = {}  -- [button] = FontString
@@ -38,26 +38,27 @@ end
 
 -- Reading -----------------------------------------------------------------------
 
+-- The game can hide aura data out of combat too (a battleground, an arena, a
+-- keystone): then the last known timers stay and keep counting down.
 local function Scan()
 	if InCombatLockdown() then return false end
-	wipe(byId)
-	wipe(byName)
-	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return true end
+	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
+	local ids, names = {}, {}
 	for i = 1, 255 do
 		local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
 		if not ok or not aura then break end
-		local source, expires, id, name = aura.sourceUnit, aura.expirationTime, aura.spellId, aura.name
-		if not (Secret(source) or Secret(expires) or Secret(id) or Secret(name))
-			and source == "player" and expires and expires > 0 then
-			if id then byId[id] = expires end
-			if name then byName[name] = expires end
-			local duration = aura.duration
-			if duration and not Secret(duration) and duration > 0 then
+		local source, expires, id, name, duration = aura.sourceUnit, aura.expirationTime, aura.spellId, aura.name, aura.duration
+		if Secret(source) or Secret(expires) or Secret(id) or Secret(name) or Secret(duration) then return false end
+		if source == "player" and expires and expires > 0 then
+			if id then ids[id] = expires end
+			if name then names[name] = expires end
+			if duration and duration > 0 then
 				if id then durationById[id] = duration end
 				if name then durationByName[name] = duration end
 			end
 		end
 	end
+	byId, byName = ids, names
 	return true
 end
 
@@ -78,20 +79,25 @@ local function ButtonSpell(button)
 	end
 end
 
+-- By spell ID or by name, whichever is later: a recast of another rank in
+-- combat only updates the name.
 local function Expires(button)
 	local spell = ButtonSpell(button)
 	if not spell then return end
-	if byId[spell] then return byId[spell] end
 	local name = SpellName(spell)
-	return name and byName[name]
+	if Secret(name) then name = nil end
+	local a, b = byId[spell], name and byName[name]
+	if a and b then return math.max(a, b) end
+	return a or b
 end
 
 -- Showing ----------------------------------------------------------------------------
 
+-- As on the game's own buff icons: seconds up to 90 s, minutes up to 90 m,
+-- seconds round down, minutes and hours up.
 function ns.FormatAuraTime(left)
-	if left >= 3600 then return ("%dh"):format(math.ceil(left / 3600)) end
-	if left >= 60 then return ("%dm"):format(math.ceil(left / 60)) end
-	-- seconds round down and minutes up, as on the game's own buff icons
+	if left >= 5400 then return ("%dh"):format(math.ceil(left / 3600)) end
+	if left >= 90 then return ("%dm"):format(math.ceil(left / 60)) end
 	return ("%ds"):format(math.floor(left))
 end
 
@@ -121,35 +127,45 @@ local function Text(button)
 end
 
 local Update
-
-local function StartTicker()
-	if not ticker then ticker = C_Timer.NewTicker(UPDATE, function() Update() end) end
-end
+local tickEvery
+local shownText = {} -- [FontString] = text it shows, so it is only set on a change
 
 local function StopTicker()
 	if ticker then
 		ticker:Cancel()
 		ticker = nil
 	end
+	tickEvery = nil
+end
+
+local function StartTicker(every)
+	if ticker and tickEvery == every then return end
+	StopTicker()
+	tickEvery = every
+	ticker = C_Timer.NewTicker(every, function() Update() end)
 end
 
 -- Puts the right text on every button; keeps the ticker only while one shows.
 Update = function()
 	local on = DB() and DB().auraTimers
 	local now = GetTime()
-	local any = false
+	local soonest
 	for button, fs in pairs(texts) do
 		local expires = on and button:IsVisible() and Expires(button)
 		local left = expires and expires - now
 		if left and left > 0 then
-			fs:SetText(ns.FormatAuraTime(left))
+			local text = ns.FormatAuraTime(left)
+			if shownText[fs] ~= text then
+				fs:SetText(text)
+				shownText[fs] = text
+			end
 			fs:Show()
-			any = true
+			soonest = math.min(soonest or left, left)
 		else
 			fs:Hide()
 		end
 	end
-	if any then StartTicker() else StopTicker() end
+	if soonest then StartTicker(soonest < 90 and FAST or SLOW) else StopTicker() end
 end
 ns.UpdateAuraTimers = Update
 
@@ -187,19 +203,22 @@ end)
 -- Whether a cast went to you: no target (seals, self-only buffs), your own
 -- name, or, when the name can't be read, no friendly target but you.
 local function AtSelf(target)
+	if Secret(target) then
+		return not (UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player"))
+	end
 	if target == nil or target == "" then return true end
-	if not Secret(target) then return target == UnitName("player") end
-	return not (UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player"))
+	return target == UnitName("player")
 end
 
 local function Recast(castGUID, spellId)
 	local target = sentTo[castGUID]
 	sentTo[castGUID] = nil
-	if Secret(spellId) or not AtSelf(target) then return end
+	if Secret(spellId) then return end
 	local name = SpellName(spellId)
 	if Secret(name) then name = nil end
+	-- only your own buffs have a known duration; anything else stops here
 	local duration = durationById[spellId] or (name and durationByName[name])
-	if not duration then return end
+	if not duration or not AtSelf(target) then return end
 	local expires = GetTime() + duration
 	byId[spellId] = expires
 	if name then byName[name] = expires end
@@ -210,22 +229,23 @@ local frame = CreateFrame("Frame")
 frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 	if event == "UNIT_SPELLCAST_SENT" then
 		-- unit, target, castGUID, spellId
-		if b and not Secret(b) then sentTo[b] = a end
+		if not Secret(b) and b then sentTo[b] = a end
 	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
 		-- unit, castGUID, spellId
-		if a and b and not Secret(a) then Recast(a, b) end
-	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
-		if a and not Secret(a) then sentTo[a] = nil end
+		if not Secret(a) and a and b then Recast(a, b) end
+	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_FAILED_QUIET" or event == "UNIT_SPELLCAST_INTERRUPTED" then
+		if not Secret(a) and a then sentTo[a] = nil end
 	elseif event == "UNIT_AURA" then
 		if InCombatLockdown() then return end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
+		wipe(sentTo) -- casts that never reported back
 		Refresh()
 	else
 		Queue()
 	end
 end)
-for _, event in ipairs({ "UNIT_AURA", "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED" }) do
+for _, event in ipairs({ "UNIT_AURA", "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_FAILED_QUIET", "UNIT_SPELLCAST_INTERRUPTED" }) do
 	frame:RegisterUnitEvent(event, "player")
 end
 for _, event in ipairs({
