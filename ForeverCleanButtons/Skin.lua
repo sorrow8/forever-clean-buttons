@@ -343,6 +343,14 @@ local function Unskin(button)
 	p.outer:Hide()
 	p.inner:Hide()
 
+	-- The snapshot is from when the skin went on; the stock art may have changed
+	-- since (Edit Mode's "Hide Bar Art"). Let the game lay its current art again.
+	if kinds[button] == "action" and type(button.UpdateButtonArt) == "function" then
+		button:UpdateButtonArt()
+	elseif kinds[button] == "bag" and type(button.UpdateTextures) == "function" then
+		button:UpdateTextures()
+	end
+
 	local icon = button.icon
 	if kinds[button] == "bag" and icon then
 		icon:SetAlpha(1)
@@ -443,17 +451,23 @@ end
 -- Dominos passes every button it builds through its ButtonThemer module.
 -- Dominos loads first (OptionalDeps), so the hook is in place before it
 -- builds its bars at login.
+-- Every hook checks the method is there first: Dominos updates weekly, and a
+-- renamed method must not stop this file from loading.
+local function HookIf(target, method, fn)
+	if type(target) == "table" and type(target[method]) == "function" then
+		hooksecurefunc(target, method, fn)
+	end
+end
+
 local Dominos = _G.Dominos
-if Dominos and Dominos.GetModule then
+if type(Dominos) == "table" and type(Dominos.GetModule) == "function" then
 	local ok, themer = pcall(Dominos.GetModule, Dominos, "ButtonThemer", true)
-	if ok and themer then
-		hooksecurefunc(themer, "Register", function(_, button) Register(button) end)
-		hooksecurefunc(themer, "Reskin", function() ns.ApplyAll() end)
+	if ok then
+		HookIf(themer, "Register", function(_, button) Register(button) end)
+		HookIf(themer, "Reskin", function() ns.ApplyAll() end)
 	end
 	-- a bar's scale changes how many units one screen pixel is
-	if Dominos.Frame and Dominos.Frame.SetFrameScale then
-		hooksecurefunc(Dominos.Frame, "SetFrameScale", function() ns.ApplyAll() end)
-	end
+	HookIf(Dominos.Frame, "SetFrameScale", function() ns.ApplyAll() end)
 end
 
 function ns.InitSkin()

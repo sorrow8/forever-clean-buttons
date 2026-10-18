@@ -32,18 +32,17 @@ local L = {
 	MICRO_HELP = "The small buttons for the character, spellbook, quest log and the rest.",
 
 	AURAS = "Buff timers on buttons",
-	AURAS_HELP = "Your own buffs show how long they have left on their spell's button. In combat the game hides buff data from addons, so the time keeps counting from before the fight.",
+	AURAS_HELP = "Your own buffs show how long they have left on their spell's button. A separate option: it works with the square look on or off. In combat the game hides buff data from addons, so the time keeps counting from before the fight.",
 
 	RESET = "Reset settings",
 	CMD_HINT = "Open this window:",
-	LANG_AUTO = "Auto",
 
 	MSG_WELCOME = "installed. Your buttons are now square. Settings: type |cffebbd61/fcb|r",
 	MSG_LOADED = "loaded. Settings: |cffebbd61/fcb|r",
 	MSG_ON = "on.",
 	MSG_OFF = "off, the buttons look as usual again.",
 	MSG_RESET = "settings reset.",
-	MSG_HELP = "/fcb: window, /fcb on, /fcb off, /fcb lang auto/en/ru, /fcb reset",
+	MSG_HELP = "/fcb: window, /fcb on, /fcb off, /fcb toggle, /fcb lang auto/en/ru, /fcb reset",
 
 	OPTIONS_OPEN = "Open the settings window",
 	OPTIONS_TEXT = "Every setting lives in the addon's own window.",

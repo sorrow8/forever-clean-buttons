@@ -92,7 +92,10 @@ local function Text(button)
 		local font, size = fs:GetFont()
 		if font then fs:SetFont(font, size or 11, "OUTLINE") end
 		fs:SetTextColor(1, 1, 1)
-		fs:SetPoint("BOTTOM", 0, 3)
+		-- top left: the hotkey sits top right, the stack count bottom right and a
+		-- macro's name bottom centre
+		fs:SetPoint("TOPLEFT", 2, -2)
+		fs:SetJustifyH("LEFT")
 		texts[button] = fs
 	end
 	return fs
@@ -131,9 +134,21 @@ Update = function()
 end
 ns.UpdateAuraTimers = Update
 
+-- Many changes come at once (a Dominos page turn touches every button):
+-- collect them and update once on the next frame.
+local queued = false
+local function Queue()
+	if queued then return end
+	queued = true
+	C_Timer.After(0, function()
+		queued = false
+		Update()
+	end)
+end
+
 local function Refresh()
 	Scan()
-	Update()
+	Queue()
 end
 
 -- Buttons --------------------------------------------------------------------------------
@@ -143,24 +158,25 @@ ns.OnRegister(function(button, kind)
 	Text(button):Hide()
 	-- paging (Dominos, stances, the default bars) changes the button's action
 	button:HookScript("OnAttributeChanged", function(_, name)
-		if name == "action" then Update() end
+		if name == "action" then Queue() end
 	end)
-	Update()
+	Queue()
 end)
 
 local frame = CreateFrame("Frame")
-frame:SetScript("OnEvent", function(_, event, unit)
+frame:SetScript("OnEvent", function(_, event)
 	if event == "UNIT_AURA" then
-		if unit ~= "player" or InCombatLockdown() then return end
+		if InCombatLockdown() then return end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
 		Refresh()
 	else
-		Update()
+		Queue()
 	end
 end)
+frame:RegisterUnitEvent("UNIT_AURA", "player")
 for _, event in ipairs({
-	"UNIT_AURA", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED",
+	"PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED",
 	"ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM",
 }) do
 	frame:RegisterEvent(event)

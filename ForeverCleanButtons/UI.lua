@@ -623,6 +623,11 @@ end
 -- After a language change: drop the old window and build it again in the
 -- new language, at the same place and with the same visibility.
 function ns.RebuildWindow()
+	if options then
+		options.text:SetText(L.OPTIONS_TEXT)
+		options.button.text:SetText(L.OPTIONS_OPEN)
+		options.button:SetWidth(options.button.text:GetStringWidth() + 28)
+	end
 	if not win then return end
 	local shown = win:IsShown()
 	win:Hide()
@@ -632,6 +637,8 @@ function ns.RebuildWindow()
 end
 
 -- The game's Options: a page with one button that opens the window.
+local options -- the game's Options page, re-labelled on a language switch
+
 local function RegisterOptions()
 	if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then return end
 	local panel = CreateFrame("Frame")
@@ -646,6 +653,7 @@ local function RegisterOptions()
 		if not win or not win:IsShown() then ns.ToggleWindow() end
 	end)
 	button:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -14)
+	options = { text = text, button = button }
 	local category = Settings.RegisterCanvasLayoutCategory(panel, L.TITLE)
 	Settings.RegisterAddOnCategory(category)
 end
