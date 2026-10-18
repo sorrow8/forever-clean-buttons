@@ -481,6 +481,7 @@ local function Refresh()
 	widgets.bags:SetActive(enabled)
 	widgets.micro.switch:SetChecked(db.micro)
 	widgets.micro:SetActive(enabled)
+	widgets.auras.switch:SetChecked(db.auraTimers)
 end
 ns.RefreshUI = Refresh
 
@@ -570,6 +571,9 @@ local function Build()
 	y = y - h - 10
 	row, h = ToggleRow(win, y, L.MICRO, L.MICRO_HELP, "micro")
 	widgets.micro = row
+	y = y - h - 10
+	row, h = ToggleRow(win, y, L.AURAS, L.AURAS_HELP, "auraTimers")
+	widgets.auras = row
 	y = y - h - 18
 
 	-- Footer

@@ -31,6 +31,9 @@ local L = {
 	MICRO = "Menu buttons",
 	MICRO_HELP = "The small buttons for the character, spellbook, quest log and the rest.",
 
+	AURAS = "Buff timers on buttons",
+	AURAS_HELP = "Your own buffs show how long they have left on their spell's button. In combat the game hides buff data from addons, so the time keeps counting from before the fight.",
+
 	RESET = "Reset settings",
 	CMD_HINT = "Open this window:",
 	LANG_AUTO = "Auto",

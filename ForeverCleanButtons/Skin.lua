@@ -408,12 +408,21 @@ local function KindOf(button)
 	end
 end
 
+-- Other parts of the addon (Auras.lua) want to know every button too.
+local registerListeners = {}
+
+function ns.OnRegister(fn)
+	registerListeners[#registerListeners + 1] = fn
+	for button, kind in pairs(kinds) do fn(button, kind) end
+end
+
 local function Register(button)
 	if kinds[button] then return end
 	local kind = KindOf(button)
 	if not kind then return end
 	kinds[button] = kind
 	Skin(button)
+	for _, fn in ipairs(registerListeners) do fn(button, kind) end
 end
 ns.Register = Register
 

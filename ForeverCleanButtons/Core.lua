@@ -13,6 +13,7 @@ local DEFAULTS = {
 	zoom = 8,        -- percent cut from each icon edge, 0-15
 	bags = true,
 	micro = true,
+	auraTimers = true, -- own buffs' time left on their spell's button
 }
 
 local PREFIX = "|cffebbd61Forever Clean Buttons|r: "
