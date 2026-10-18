@@ -107,7 +107,9 @@ local function Save(button, r, keepArt)
 		if not s.atlas then s.texture = r:GetTexture() end
 	end
 	if r.GetBlendMode then s.blend = r:GetBlendMode() end
-	if r.GetVertexColor then s.color = { r:GetVertexColor() } end
+	-- the game tints an icon on its own (unusable, out of mana) and the skin
+	-- never does, so its colour and alpha are left to the game
+	if keepArt then s.alpha = nil elseif r.GetVertexColor then s.color = { r:GetVertexColor() } end
 	saved[r] = s
 end
 
@@ -120,7 +122,7 @@ local function Restore(r, s)
 	if s.coords and not s.atlas then r:SetTexCoord(unpack(s.coords)) end
 	if s.blend then r:SetBlendMode(s.blend) end
 	if s.color then r:SetVertexColor(unpack(s.color)) end
-	r:SetAlpha(s.alpha)
+	if s.alpha then r:SetAlpha(s.alpha) end
 	r:ClearAllPoints()
 	for _, p in ipairs(s.points) do r:SetPoint(unpack(p)) end
 	if #s.points < 2 then r:SetSize(s.width, s.height) end
@@ -479,8 +481,17 @@ function ns.InitSkin()
 		if button and tex == button.Portrait and Skinned(button) then Portrait(button) end
 	end)
 
+	-- Edit Mode's icon and menu sizes scale the stock bars: a border keeps one pixel
+	for _, name in ipairs({ "MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight",
+		"MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7", "StanceBar", "PetActionBar",
+		"MicroMenuContainer", "BagsBar" }) do
+		HookIf(_G[name], "UpdateSystemSettingIconSize", function() ns.ApplyAll() end)
+		HookIf(_G[name], "UpdateSystemSettingSize", function() ns.ApplyAll() end)
+	end
+
 	local watcher = CreateFrame("Frame")
 	watcher:RegisterEvent("UI_SCALE_CHANGED")
 	watcher:RegisterEvent("DISPLAY_SIZE_CHANGED")
+	watcher:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 	watcher:SetScript("OnEvent", function() ns.ApplyAll() end)
 end

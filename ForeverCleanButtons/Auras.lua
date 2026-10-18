@@ -44,12 +44,15 @@ local function Scan()
 	if InCombatLockdown() then return false end
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
 	local ids, names = {}, {}
+	local hidden = false
 	for i = 1, 255 do
 		local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
 		if not ok or not aura then break end
+		if issecrettable and issecrettable(aura) then return false end
 		local source, expires, id, name, duration = aura.sourceUnit, aura.expirationTime, aura.spellId, aura.name, aura.duration
-		if Secret(source) or Secret(expires) or Secret(id) or Secret(name) or Secret(duration) then return false end
-		if source == "player" and expires and expires > 0 then
+		if Secret(source) or Secret(expires) or Secret(id) or Secret(name) or Secret(duration) then
+			hidden = true
+		elseif source == "player" and expires and expires > 0 then
 			if id then ids[id] = expires end
 			if name then names[name] = expires end
 			if duration and duration > 0 then
@@ -57,6 +60,12 @@ local function Scan()
 				if name then durationByName[name] = duration end
 			end
 		end
+	end
+	-- some buffs came back hidden: the timers known before keep running till they end
+	if hidden then
+		local now = GetTime()
+		for k, v in pairs(byId) do if ids[k] == nil and v > now then ids[k] = v end end
+		for k, v in pairs(byName) do if names[k] == nil and v > now then names[k] = v end end
 	end
 	byId, byName = ids, names
 	return true
@@ -96,6 +105,7 @@ end
 -- As on the game's own buff icons: seconds up to 90 s, minutes up to 90 m,
 -- seconds round down, minutes and hours up.
 function ns.FormatAuraTime(left)
+	if left >= 129600 then return ("%dd"):format(math.ceil(left / 86400)) end
 	if left >= 5400 then return ("%dh"):format(math.ceil(left / 3600)) end
 	if left >= 90 then return ("%dm"):format(math.ceil(left / 60)) end
 	return ("%ds"):format(math.floor(left))
@@ -121,6 +131,8 @@ local function Text(button)
 		end
 		Resize()
 		holder:SetScript("OnSizeChanged", Resize)
+		-- a bar that shows up later (in combat only, after Alt+Z) gets its timers
+		holder:SetScript("OnShow", function() ns.QueueAuraTimers() end)
 		texts[button] = fs
 	end
 	return fs
@@ -181,6 +193,8 @@ local function Queue()
 	end)
 end
 
+ns.QueueAuraTimers = Queue
+
 local function Refresh()
 	Scan()
 	Queue()
@@ -207,8 +221,13 @@ local function AtSelf(target)
 		return not (UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player"))
 	end
 	if target == nil or target == "" then return true end
-	-- the name may come with the realm ("Name-Realm")
-	return target == UnitName("player") or target:match("^(.-)%-") == UnitName("player")
+	-- the name may come with the realm ("Name-Realm"): yours only on your realm
+	local name, realm = target:match("^(.-)%-(.+)$")
+	if name then
+		local own = GetNormalizedRealmName and GetNormalizedRealmName()
+		return name == UnitName("player") and (own == nil or realm == own)
+	end
+	return target == UnitName("player")
 end
 
 -- The last casts and what became of them, for /fcb debug.
