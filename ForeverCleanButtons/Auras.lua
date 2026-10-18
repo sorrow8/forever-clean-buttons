@@ -20,6 +20,12 @@ local _, ns = ...
 -- its time can be read it is the exact time, recasts included.
 --
 -- A button whose buff is on you gets a coloured frame.
+--
+-- In combat the game refuses addons both the aura data and the live duration
+-- ("Auras cannot be accessed when secret while tainted"), but the aura
+-- updates still name the aura instances that changed: a known instance that
+-- is updated (recast) starts again from its full duration, one that is
+-- removed takes its timer and frame with it.
 
 local FAST, SLOW = 0.2, 1 -- seconds between updates: while seconds show (a new one on time), or only minutes
 local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the button height, limits
@@ -36,6 +42,7 @@ local recastByName = {}   -- [spell name] = GetTime() of the last recast on you
 local scannedAt = 0       -- GetTime() of the last full reading
 local instById = {}       -- [spellId] = aura instance ID, read out of combat
 local instByName = {}     -- [spell name] = aura instance ID
+local spellOfInst = {}    -- [aura instance ID] = { id = spellId, name = spell name }
 local GLOW = { 0.35, 0.95, 0.45, 1 } -- the frame of a button whose buff is on you
 local ticker
 
@@ -57,7 +64,7 @@ end
 local function Scan()
 	if InCombatLockdown() then return false end
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
-	local ids, names, insts, instNames = {}, {}, {}, {}
+	local ids, names, insts, instNames, owners = {}, {}, {}, {}, {}
 	local hidden = false
 	for i = 1, 255 do
 		local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
@@ -73,6 +80,7 @@ local function Scan()
 			if inst and not Secret(inst) then
 				if id then insts[id] = inst end
 				if name then instNames[name] = inst end
+				owners[inst] = { id = id, name = name }
 			end
 			if duration and duration > 0 then
 				if id then durationById[id] = duration end
@@ -87,8 +95,9 @@ local function Scan()
 		for k, v in pairs(byName) do if names[k] == nil and v > now then names[k] = v end end
 		for k, v in pairs(instById) do if insts[k] == nil then insts[k] = v end end
 		for k, v in pairs(instByName) do if instNames[k] == nil then instNames[k] = v end end
+		for k, v in pairs(spellOfInst) do if owners[k] == nil then owners[k] = v end end
 	end
-	byId, byName, instById, instByName = ids, names, insts, instNames
+	byId, byName, instById, instByName, spellOfInst = ids, names, insts, instNames, owners
 	scannedAt = GetTime()
 	return true
 end
@@ -409,7 +418,10 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 		if not Secret(a) and a then sentTo[a] = nil end
 	elseif event == "UNIT_AURA" then
 		pcall(ns.NoteAuraUpdate, a) -- a note for /fcb debug must never break anything
-		if InCombatLockdown() then return Queue() end
+		if InCombatLockdown() then
+			pcall(ns.FollowAuraUpdate, a)
+			return Queue()
+		end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
 		wipe(sentTo) -- casts that never reported back
@@ -429,6 +441,58 @@ for _, event in ipairs({
 end
 
 ns.OnChange(Update)
+
+-- A known buff starts again from its full duration (a recast) or ends.
+local function Restart(owner)
+	local duration = (owner.id and durationById[owner.id]) or (owner.name and durationByName[owner.name])
+	if not duration then return end
+	local expires = GetTime() + duration
+	if owner.id then byId[owner.id] = expires; recastById[owner.id] = GetTime() end
+	if owner.name then byName[owner.name] = expires; recastByName[owner.name] = GetTime() end
+end
+
+local function Ended(owner)
+	if owner.id then byId[owner.id] = nil end
+	if owner.name then byName[owner.name] = nil end
+end
+
+local function Visible(v)
+	return not (Secret(v) or (issecrettable and issecrettable(v)))
+end
+
+-- In combat: what the aura update names, without reading any aura data.
+function ns.FollowAuraUpdate(info)
+	if type(info) ~= "table" or not Visible(info) then return end
+	local updated, added, removed = info.updatedAuraInstanceIDs, info.addedAuras, info.removedAuraInstanceIDs
+	if type(updated) == "table" and Visible(updated) then
+		for _, inst in ipairs(updated) do
+			local owner = Visible(inst) and spellOfInst[inst]
+			if owner then Restart(owner) end
+		end
+	end
+	if type(added) == "table" and Visible(added) then
+		for _, aura in ipairs(added) do
+			if type(aura) == "table" and Visible(aura) then
+				local inst, id = aura.auraInstanceID, aura.spellId
+				if Visible(inst) and inst then
+					local owner = spellOfInst[inst]
+					if not owner and Visible(id) and id and durationById[id] then
+						owner = { id = id, name = SpellName(id) }
+						spellOfInst[inst] = owner
+						instById[id] = inst
+					end
+					if owner then Restart(owner) end
+				end
+			end
+		end
+	end
+	if type(removed) == "table" and Visible(removed) then
+		for _, inst in ipairs(removed) do
+			local owner = Visible(inst) and spellOfInst[inst]
+			if owner then Ended(owner) end
+		end
+	end
+end
 
 -- What the last aura update said, for /fcb debug.
 local lastUpdate = "none yet"
