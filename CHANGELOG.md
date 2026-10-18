@@ -1,3 +1,7 @@
+# 1.1.2
+
+- Recasting a buff on yourself in combat restarts its timer from the full duration, instead of counting down the old one.
+
 # 1.1.1
 
 - Buff timers sit in the centre of the button in a bigger font that follows the button size.

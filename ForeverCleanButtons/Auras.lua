@@ -9,6 +9,10 @@ local _, ns = ...
 -- expiration keeps counting down, and the list is read again the moment the
 -- fight ends. A buff matches a button by spell ID first, then by name, so
 -- another rank of the same spell finds it too.
+--
+-- Recasting a buff in combat can't be read either, but the cast itself can:
+-- when you cast one of your own buffs on yourself, its timer starts again from
+-- the full duration seen the last time it was read.
 
 local UPDATE = 1 -- seconds between text updates while a timer is shown
 local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the button height, limits
@@ -16,6 +20,9 @@ local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the bu
 local texts = {}  -- [button] = FontString
 local byId = {}   -- [spellId] = expirationTime
 local byName = {} -- [spell name] = expirationTime
+local durationById = {}   -- [spellId] = full duration, kept for recasts in combat
+local durationByName = {} -- [spell name] = full duration
+local sentTo = {}         -- [castGUID] = who the cast was aimed at
 local ticker
 
 local function DB() return ns.DB() end
@@ -44,6 +51,11 @@ local function Scan()
 			and source == "player" and expires and expires > 0 then
 			if id then byId[id] = expires end
 			if name then byName[name] = expires end
+			local duration = aura.duration
+			if duration and not Secret(duration) and duration > 0 then
+				if id then durationById[id] = duration end
+				if name then durationByName[name] = duration end
+			end
 		end
 	end
 	return true
@@ -169,9 +181,41 @@ ns.OnRegister(function(button, kind)
 	Queue()
 end)
 
+-- Recasts -------------------------------------------------------------------------------
+
+-- Whether a cast went to you: no target (seals, self-only buffs), your own
+-- name, or, when the name can't be read, no friendly target but you.
+local function AtSelf(target)
+	if target == nil or target == "" then return true end
+	if not Secret(target) then return target == UnitName("player") end
+	return not (UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player"))
+end
+
+local function Recast(castGUID, spellId)
+	local target = sentTo[castGUID]
+	sentTo[castGUID] = nil
+	if Secret(spellId) or not AtSelf(target) then return end
+	local name = SpellName(spellId)
+	if Secret(name) then name = nil end
+	local duration = durationById[spellId] or (name and durationByName[name])
+	if not duration then return end
+	local expires = GetTime() + duration
+	byId[spellId] = expires
+	if name then byName[name] = expires end
+	Queue()
+end
+
 local frame = CreateFrame("Frame")
-frame:SetScript("OnEvent", function(_, event)
-	if event == "UNIT_AURA" then
+frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
+	if event == "UNIT_SPELLCAST_SENT" then
+		-- unit, target, castGUID, spellId
+		if b and not Secret(b) then sentTo[b] = a end
+	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+		-- unit, castGUID, spellId
+		if a and b and not Secret(a) then Recast(a, b) end
+	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
+		if a and not Secret(a) then sentTo[a] = nil end
+	elseif event == "UNIT_AURA" then
 		if InCombatLockdown() then return end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
@@ -180,7 +224,9 @@ frame:SetScript("OnEvent", function(_, event)
 		Queue()
 	end
 end)
-frame:RegisterUnitEvent("UNIT_AURA", "player")
+for _, event in ipairs({ "UNIT_AURA", "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED" }) do
+	frame:RegisterUnitEvent(event, "player")
+end
 for _, event in ipairs({
 	"PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED",
 	"ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM",
