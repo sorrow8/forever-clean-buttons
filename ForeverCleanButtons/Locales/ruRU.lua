@@ -31,7 +31,7 @@ ns.LOCALES.ruRU = {
 	LANG_AUTO = "Авто",
 
 	MSG_WELCOME = "установлен. Кнопки теперь квадратные. Настройки: набери |cffebbd61/fcb|r",
-	MSG_LOADED = "загружен. Настройки: набери |cffebbd61/fcb|r",
+	MSG_LOADED = "загружен. Настройки: |cffebbd61/fcb|r",
 	MSG_ON = "включён.",
 	MSG_OFF = "выключен, у кнопок снова обычный вид.",
 	MSG_RESET = "настройки сброшены.",

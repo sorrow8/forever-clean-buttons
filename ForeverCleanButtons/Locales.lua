@@ -36,7 +36,7 @@ local L = {
 	LANG_AUTO = "Auto",
 
 	MSG_WELCOME = "installed. Your buttons are now square. Settings: type |cffebbd61/fcb|r",
-	MSG_LOADED = "loaded. Settings: type |cffebbd61/fcb|r",
+	MSG_LOADED = "loaded. Settings: |cffebbd61/fcb|r",
 	MSG_ON = "on.",
 	MSG_OFF = "off, the buttons look as usual again.",
 	MSG_RESET = "settings reset.",
