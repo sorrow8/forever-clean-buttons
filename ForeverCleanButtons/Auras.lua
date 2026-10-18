@@ -11,6 +11,7 @@ local _, ns = ...
 -- another rank of the same spell finds it too.
 
 local UPDATE = 1 -- seconds between text updates while a timer is shown
+local TEXT_SIZE, TEXT_MIN, TEXT_MAX = 0.45, 12, 22 -- font size: share of the button height, limits
 
 local texts = {}  -- [button] = FontString
 local byId = {}   -- [spellId] = expirationTime
@@ -88,14 +89,19 @@ local function Text(button)
 		local holder = CreateFrame("Frame", nil, button)
 		holder:SetAllPoints(button)
 		holder:SetFrameLevel(button:GetFrameLevel() + 5)
-		fs = holder:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-		local font, size = fs:GetFont()
-		if font then fs:SetFont(font, size or 11, "OUTLINE") end
+		fs = holder:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 		fs:SetTextColor(1, 1, 1)
-		-- top left: the hotkey sits top right, the stack count bottom right and a
-		-- macro's name bottom centre
-		fs:SetPoint("TOPLEFT", 2, -2)
-		fs:SetJustifyH("LEFT")
+		-- in the middle and big, so it reads at a glance; the size follows the button
+		fs:SetPoint("CENTER", 0, 0)
+		fs:SetJustifyH("CENTER")
+		local font = fs:GetFont()
+		local function Resize()
+			local size = math.floor((button:GetHeight() or 36) * TEXT_SIZE + 0.5)
+			size = math.max(TEXT_MIN, math.min(TEXT_MAX, size))
+			if font then fs:SetFont(font, size, "OUTLINE") end
+		end
+		Resize()
+		holder:SetScript("OnSizeChanged", Resize)
 		texts[button] = fs
 	end
 	return fs
