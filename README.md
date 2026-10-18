@@ -1,5 +1,7 @@
 # Forever Clean Buttons
 
+![Action bar with clean buttons](docs/screenshot.png)
+
 Square, sharp action buttons with a thin pixel border, for **World of Warcraft: Forever**. No rounded masks, no blurry frame art, just the icons.
 
 - Works with Dominos (every bar it builds) or with the default bars
