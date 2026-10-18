@@ -246,16 +246,20 @@ function STYLE.action(button)
 	Fit(button, button.chargeCooldown, inner)
 end
 
--- An empty bag slot shows a rounded placeholder picture (an atlas): hidden,
--- the dark square says "empty" on its own.
+-- An empty bag slot shows a blurry placeholder picture: hidden, the dark
+-- square says "empty" on its own. The backpack and the key ring always have
+-- their own picture.
+local function BagEmpty(button)
+	local name = button:GetName() or ""
+	if not name:match("^Character.*Slot$") then return false end
+	local slot = button:GetID()
+	return not (slot and slot > 0 and GetInventoryItemTexture("player", slot))
+end
+
 local function BagIcon(button)
 	local icon = button.icon
-	if icon:GetAtlas() then
-		icon:SetAlpha(0)
-	else
-		icon:SetAlpha(1)
-		icon:SetTexCoord(ns.Crop())
-	end
+	icon:SetAlpha(BagEmpty(button) and 0 or 1)
+	icon:SetTexCoord(ns.Crop())
 end
 
 function STYLE.bag(button)
@@ -274,19 +278,21 @@ function STYLE.bag(button)
 end
 
 -- Micro button pictures are taller than wide; cut the middle square out of
--- the atlas so they fill the square without stretching.
+-- the atlas so they fill the square without stretching. On an atlas texture
+-- the game reads texture coordinates inside the atlas piece (0-1 is the
+-- whole picture), not inside the big texture file.
 local function SquareAtlas(tex)
 	local atlas = tex and tex:GetAtlas()
 	local info = atlas and C_Texture.GetAtlasInfo(atlas)
 	if not info then return end
-	local l, r, t, b = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
 	local w, h = info.width or 1, info.height or 1
+	local l, r, t, b = 0, 1, 0, 1
 	if h > w then
-		local d = (b - t) * (1 - w / h) / 2
-		t, b = t + d, b - d
+		local d = (1 - w / h) / 2
+		t, b = d, 1 - d
 	elseif w > h then
-		local d = (r - l) * (1 - h / w) / 2
-		l, r = l + d, r - d
+		local d = (1 - h / w) / 2
+		l, r = d, 1 - d
 	end
 	tex:SetTexCoord(l, r, t, b)
 end
