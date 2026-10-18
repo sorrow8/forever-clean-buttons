@@ -31,6 +31,9 @@ local byName = {} -- [spell name] = expirationTime
 local durationById = {}   -- [spellId] = full duration, kept for recasts in combat
 local durationByName = {} -- [spell name] = full duration
 local sentTo = {}         -- [castGUID] = who the cast was aimed at
+local recastById = {}     -- [spellId] = GetTime() of the last recast on you
+local recastByName = {}   -- [spell name] = GetTime() of the last recast on you
+local scannedAt = 0       -- GetTime() of the last full reading
 local instById = {}       -- [spellId] = aura instance ID, read out of combat
 local instByName = {}     -- [spell name] = aura instance ID
 local GLOW = { 0.35, 0.95, 0.45, 1 } -- the frame of a button whose buff is on you
@@ -86,6 +89,7 @@ local function Scan()
 		for k, v in pairs(instByName) do if instNames[k] == nil then instNames[k] = v end end
 	end
 	byId, byName, instById, instByName = ids, names, insts, instNames
+	scannedAt = GetTime()
 	return true
 end
 
@@ -116,9 +120,59 @@ local function Live(inst)
 	local okLeft, left = pcall(duration.GetRemainingDuration, duration)
 	if okLeft and type(left) == "number" and not Secret(left) then
 		if left <= 0 then return "gone" end
-		return "on", GetTime() + left
+		return "on", GetTime() + left, duration
 	end
-	return "on"
+	return "on", nil, duration
+end
+
+-- The game's own way to show a time it may hide from addons: a text binding
+-- fills our font string from a duration object, formatted like the game's buff
+-- icons (seconds up to 90 s, minutes up to 90 m ...). Built once, if the
+-- client has it.
+local formatter
+local function Formatter()
+	if formatter ~= nil then return formatter or nil end
+	if not (C_StringUtil and C_StringUtil.CreateSecondsFormatter and C_CurveUtil and C_CurveUtil.CreateCurve and Enum.SecondsFormatterInterval) then return nil end
+	formatter = false
+	local ok, f = pcall(function()
+		local fmt = C_StringUtil.CreateSecondsFormatter()
+		local curve = C_CurveUtil.CreateCurve()
+		curve:SetType(Enum.LuaCurveType.Step)
+		curve:AddPoint(0, Enum.SecondsFormatterInterval.Seconds)
+		curve:AddPoint(1 + 1.5 * 60, Enum.SecondsFormatterInterval.Minutes)
+		curve:AddPoint(1 + 1.5 * 3600, Enum.SecondsFormatterInterval.Hours)
+		curve:AddPoint(1 + 1.5 * 86400, Enum.SecondsFormatterInterval.Days)
+		fmt:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+		fmt:SetRounding(Enum.SecondsFormatterRounding.Truncate)
+		fmt:SetCanRoundUpLastUnit(true)
+		fmt:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
+		fmt:SetMaxIntervalCurve(curve)
+		fmt:SetDesiredUnitCount(1)
+		return fmt
+	end)
+	if ok and f then formatter = f end
+	return formatter or nil
+end
+
+local bindings = {} -- [FontString] = its text binding, when the client has them
+
+local function Binding(fs)
+	if bindings[fs] ~= nil then return bindings[fs] or nil end
+	local fmt = Formatter()
+	if not (fmt and C_DurationUtil and C_DurationUtil.CreateDurationTextBinding) then return nil end
+	bindings[fs] = false
+	local ok, binding = pcall(function()
+		local b = C_DurationUtil.CreateDurationTextBinding()
+		b:SetToDefaults()
+		b:SetFormatter(fmt)
+		b:SetZeroDurationText("")
+		b:SetExpiredText("")
+		b:SetFontString(fs)
+		b:SetEnabled(false)
+		return b
+	end)
+	if ok and binding then bindings[fs] = binding end
+	return bindings[fs] or nil
 end
 
 -- When the button's buff ends (nil: not known) and whether it is on you.
@@ -129,11 +183,16 @@ local function Expires(button)
 	if not spell then return end
 	local name = SpellName(spell)
 	if Secret(name) then name = nil end
-	local state, exact = Live(instById[spell] or (name and instByName[name]))
-	if exact then return exact, true end
+	local state, exact, duration = Live(instById[spell] or (name and instByName[name]))
+	if exact then return exact, true, duration end
 	local a, b = byId[spell], name and byName[name]
 	local known = (a and b) and math.max(a, b) or a or b
-	if state == "on" then return known, true end
+	if state == "on" then return known, true, duration end
+	if state == "gone" then
+		-- the buff we knew is off; only a recast seen since the last reading counts
+		local at = math.max(recastById[spell] or 0, name and recastByName[name] or 0)
+		if at <= scannedAt then return nil, false end
+	end
 	return known, known ~= nil and known > GetTime()
 end
 
@@ -227,12 +286,19 @@ Update = function()
 	local soonest
 	local active = false
 	for button, fs in pairs(texts) do
-		local expires, isOn
-		if on and button:IsVisible() then expires, isOn = Expires(button) end
+		local expires, isOn, duration
+		if on and button:IsVisible() then expires, isOn, duration = Expires(button) end
 		Glow(button, isOn)
 		if isOn then active = true end
 		local left = expires and expires - now
-		if left and left > 0 then
+		local binding = Binding(fs)
+		if isOn and duration and binding and pcall(binding.SetDuration, binding, duration) then
+			-- the game fills in the time, also when it hides it from us
+			shownText[fs] = nil
+			binding:SetEnabled(true)
+			fs:Show()
+		elseif left and left > 0 then
+			if binding then binding:SetEnabled(false) end
 			local text = ns.FormatAuraTime(left)
 			if shownText[fs] ~= text then
 				fs:SetText(text)
@@ -241,6 +307,7 @@ Update = function()
 			fs:Show()
 			soonest = math.min(soonest or left, left)
 		else
+			if binding then binding:SetEnabled(false) end
 			fs:Hide()
 		end
 	end
@@ -320,7 +387,11 @@ local function Recast(castGUID, spellId)
 	Log(spellId, name, "to", shownTarget, "- restarted at", duration)
 	local expires = GetTime() + duration
 	byId[spellId] = expires
-	if name then byName[name] = expires end
+	recastById[spellId] = GetTime()
+	if name then
+		byName[name] = expires
+		recastByName[name] = GetTime()
+	end
 	Queue()
 end
 
@@ -335,6 +406,7 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 	elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_FAILED_QUIET" or event == "UNIT_SPELLCAST_INTERRUPTED" then
 		if not Secret(a) and a then sentTo[a] = nil end
 	elseif event == "UNIT_AURA" then
+		ns.NoteAuraUpdate(a)
 		if InCombatLockdown() then return Queue() end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
@@ -356,8 +428,36 @@ end
 
 ns.OnChange(Update)
 
+-- What the last aura update said, for /fcb debug.
+local lastUpdate = "none yet"
+function ns.NoteAuraUpdate(info)
+	if type(info) ~= "table" or Secret(info) then lastUpdate = "no details"; return end
+	local function ids(list)
+		if type(list) ~= "table" then return "-" end
+		local out = {}
+		for _, v in ipairs(list) do
+			local id = type(v) == "table" and v.auraInstanceID or v
+			out[#out + 1] = Secret(id) and "<secret>" or tostring(id)
+		end
+		return table.concat(out, ",")
+	end
+	lastUpdate = ("full=%s added=%s updated=%s removed=%s"):format(tostring(info.isFullUpdate),
+		ids(info.addedAuras), ids(info.updatedAuraInstanceIDs), ids(info.removedAuraInstanceIDs))
+end
+
 function ns.DebugAuras()
 	ns.Print(("in combat: %s, your name: %s"):format(tostring(InCombatLockdown()), tostring(UnitName("player"))))
+	ns.Print("GetAuraDuration: " .. tostring(C_UnitAuras and C_UnitAuras.GetAuraDuration ~= nil))
+	for id, inst in pairs(instById) do
+		local ok, d = pcall(C_UnitAuras.GetAuraDuration, "player", inst)
+		local left = "-"
+		if ok and d then
+			local okLeft, l = pcall(d.GetRemainingDuration, d)
+			left = not okLeft and ("error " .. tostring(l)) or Secret(l) and "<secret>" or tostring(l)
+		end
+		ns.Print(("instance: %s %s #%s -> %s, left %s"):format(id, tostring(SpellName(id)), inst, ok and "ok" or ("error " .. tostring(d)), left))
+	end
+	ns.Print("last aura update: " .. lastUpdate)
 	for id, d in pairs(durationById) do ns.Print(("known: %s %s = %ss"):format(id, tostring(SpellName(id)), d)) end
 	for i, line in ipairs(castLog) do ns.Print(i .. ". " .. line) end
 	if not castLog[1] then ns.Print("no casts of your own buffs seen yet") end

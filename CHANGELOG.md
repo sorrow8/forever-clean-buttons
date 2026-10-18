@@ -1,7 +1,9 @@
 # 1.2.0
 
 - A button whose buff is on you gets a green frame.
-- Buff timers read the game's live duration of the buff (C_UnitAuras.GetAuraDuration), which works in combat too: a recast shows its new time at once. Where the game hides the time, the frame still shows the buff is on and the last known time keeps counting.
+- Buff timers use the game's own live duration of the buff (C_UnitAuras.GetAuraDuration) and its duration text binding, the same way the game's buff icons show their time: it works in combat too, also when the game hides the time from addons, so a recast shows its new time at once.
+- A buff that ends or is removed in combat takes its timer and frame with it.
+- /fcb debug also shows the live state of each known buff and the last aura update.
 
 # 1.1.2
 
