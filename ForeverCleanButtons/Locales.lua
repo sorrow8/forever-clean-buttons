@@ -46,6 +46,11 @@ local L = {
 
 	OPTIONS_OPEN = "Open the settings window",
 	OPTIONS_TEXT = "Every setting lives in the addon's own window.",
+
+	MINIMAP = "Minimap button",
+	MINIMAP_HELP = "Show the addon's button at the edge of the minimap.",
+	MM_LEFT = "Left-click: settings",
+	MM_RIGHT = "Right-click: turn on or off",
 }
 
 ns.LOCALES = {}

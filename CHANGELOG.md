@@ -1,3 +1,7 @@
+# 1.2.3
+
+- Minimap button: left-click opens the settings, right-click turns the addon on or off, and a switch in the window hides it. It's made with LibDBIcon, so minimap button collectors (like Leatrix Plus) take it in with its own tooltip.
+
 # 1.2.2
 
 - Fix: swapping seals in combat left the old seal's timer and green frame on its button until it would have run out. Buffs that replace each other (only one seal can be on you) are learned out of combat, once, and from then on casting one ends the others' timers at once, in combat too.

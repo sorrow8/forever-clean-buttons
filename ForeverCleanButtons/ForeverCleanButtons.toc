@@ -3,16 +3,21 @@
 ## Notes: Square, sharp action buttons with a thin border, for Dominos or the default bars, plus buff timers on buttons. Settings window: /fcb
 ## Notes-ruRU: Квадратные чёткие кнопки с тонкой рамкой, для Dominos или стандартных панелей, плюс время баффов на кнопках. Окно настроек: /fcb
 ## Author: sorrow8
-## Version: 1.2.2
+## Version: 1.2.3
 ## OptionalDeps: Dominos
 ## SavedVariables: ForeverCleanButtonsDB
 ## IconTexture: Interface\Icons\INV_Misc_Gem_Pearl_04
 ## AddonCompartmentFunc: ForeverCleanButtons_OnCompartmentClick
 ## Category: Action Bars
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Locales.lua
 Locales\ruRU.lua
 Core.lua
 Skin.lua
 Auras.lua
 UI.lua
+Minimap.lua

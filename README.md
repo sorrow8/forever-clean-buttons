@@ -13,6 +13,7 @@ Forever Clean Buttons makes your action bars square and sharp with a thin pixel 
 - A green frame on buttons whose buff is on you
 - Turn it off and the usual look comes back
 - English and Russian
+- Minimap button
 - Settings: `/fcb`
 
 Made for Dominos. It also works with the default bars; for the cleanest look there, turn on "Hide Bar Art" for the main bar in Edit Mode.

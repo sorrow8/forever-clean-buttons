@@ -482,6 +482,7 @@ local function Refresh()
 	widgets.micro.switch:SetChecked(db.micro)
 	widgets.micro:SetActive(enabled)
 	widgets.auras.switch:SetChecked(db.auraTimers)
+	widgets.minimap.switch:SetChecked(db.minimapShow)
 end
 ns.RefreshUI = Refresh
 
@@ -574,6 +575,9 @@ local function Build()
 	y = y - h - 10
 	row, h = ToggleRow(win, y, L.AURAS, L.AURAS_HELP, "auraTimers")
 	widgets.auras = row
+	y = y - h - 10
+	row, h = ToggleRow(win, y, L.MINIMAP, L.MINIMAP_HELP, "minimapShow")
+	widgets.minimap = row
 	y = y - h - 18
 
 	-- Footer
@@ -661,4 +665,8 @@ end
 function ns.InitUI()
 	pcall(RegisterOptions)
 	ns.OnChange(Refresh)
+	if ns.UpdateMinimapButton then
+		ns.OnChange(ns.UpdateMinimapButton)
+		ns.UpdateMinimapButton()
+	end
 end

@@ -14,6 +14,8 @@ local DEFAULTS = {
 	bags = true,
 	micro = true,
 	auraTimers = true, -- own buffs' time left on their spell's button
+	minimapShow = true,
+	minimapAngle = 240,
 }
 
 local PREFIX = "|cffebbd61Forever Clean Buttons|r: "
