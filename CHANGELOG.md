@@ -1,3 +1,7 @@
+# 1.2.1
+
+- Buff timers show seconds as a bare number ("15" instead of "15s"); minutes, hours and days keep their letter.
+
 # 1.2.0
 
 - A button whose buff is on you gets a green frame.

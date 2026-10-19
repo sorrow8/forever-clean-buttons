@@ -126,12 +126,12 @@ end
 -- Showing ----------------------------------------------------------------------------
 
 -- As on the game's own buff icons: seconds up to 90 s, minutes up to 90 m,
--- seconds round down, minutes and hours up.
+-- seconds round down, minutes and hours up. Seconds go without a letter.
 function ns.FormatAuraTime(left)
 	if left >= 129600 then return ("%dd"):format(math.ceil(left / 86400)) end
 	if left >= 5400 then return ("%dh"):format(math.ceil(left / 3600)) end
 	if left >= 90 then return ("%dm"):format(math.ceil(left / 60)) end
-	return ("%ds"):format(math.floor(left))
+	return ("%d"):format(math.floor(left)) -- a bare number is seconds
 end
 
 local function Text(button)
