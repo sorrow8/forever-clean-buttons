@@ -77,10 +77,21 @@ local function Groups()
 	return db.exclusive
 end
 
+-- Buffs of one family share a word at the start or the end of their name:
+-- Seal of Fury / Seal of Righteousness, Devotion Aura / Retribution Aura.
+local function FirstWord(name) return name:match("^(%S+)") end
+local function LastWord(name) return name:match("(%S+)$") end
+local function SameFamily(a, b)
+	local fa, fb, la, lb = FirstWord(a), FirstWord(b), LastWord(a), LastWord(b)
+	return (fa ~= nil and fa == fb and fa ~= a) or (la ~= nil and la == lb and la ~= a)
+end
+
 -- One more sighting of two buffs replacing each other, saved till it is
--- trusted: ["a\nb"] = times. True once seen often enough.
+-- trusted: ["a\nb"] = times. True once seen often enough; a family (seals,
+-- auras) is trusted at once, so swapping seals is learned on the first swap.
 local function Seen(a, b)
 	if not Groups() then return false end
+	if SameFamily(a, b) then return true end
 	local db = DB()
 	db.exclusiveSeen = db.exclusiveSeen or {}
 	local key = a < b and a .. "\n" .. b or b .. "\n" .. a
