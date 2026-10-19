@@ -1,3 +1,12 @@
+# 1.2.4
+
+- The minimap button stays where a minimap button collector (like Leatrix Plus) put it: it was put back on the minimap's edge at every fight.
+- Buffs that replace each other are learned more carefully: only a buff your cast put on you anew counts, and a pair must be seen twice. Groups learned by older versions are cleared once, and /fcb forget clears them by hand. A used-up Clearcasting or a cut-short drink no longer ties unrelated buffs together.
+- An absorb shield taking a hit (Power Word: Shield, Ice Barrier, Mana Shield) or a buff losing a charge no longer restarts its timer; only your own recast does.
+- No Lua error when the game hides who your target is; a cast whose target isn't known no longer counts as cast on you.
+- Macros that use an item no longer look for a spell.
+- The main switch's help says it only controls the square look; buff timers are their own option.
+
 # 1.2.3
 
 - Minimap button: left-click opens the settings, right-click turns the addon on or off, and a switch in the window hides it. It's made with LibDBIcon, so minimap button collectors (like Leatrix Plus) take it in with its own tooltip.

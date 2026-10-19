@@ -59,7 +59,10 @@ function ns.SetLanguage(code)
 end
 
 function ns.Reset()
-	local keep = { win = db.win, language = db.language, welcomed = db.welcomed, exclusive = db.exclusive }
+	local keep = {
+		win = db.win, language = db.language, welcomed = db.welcomed,
+		exclusive = db.exclusive, exclusiveSeen = db.exclusiveSeen, exclusiveVersion = db.exclusiveVersion,
+	}
 	wipe(db)
 	for k, v in pairs(DEFAULTS) do db[k] = v end
 	for k, v in pairs(keep) do db[k] = v end
@@ -120,6 +123,9 @@ local function Command(msg)
 		ns.SetLanguage(arg ~= "auto" and ns.LanguageCode(arg) or nil)
 	elseif cmd == "debug" then
 		ns.DebugAuras()
+	elseif cmd == "forget" then
+		ns.ForgetAuraGroups()
+		ns.Print(L.MSG_FORGET)
 	elseif cmd == "reset" then
 		ns.Reset()
 	else

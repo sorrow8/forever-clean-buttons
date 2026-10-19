@@ -11,14 +11,14 @@ Forever Clean Buttons makes your action bars square and sharp with a thin pixel 
 - Border thickness, colour and icon zoom, with a live preview
 - Buff timers in big numbers on the spell's button, updated when you recast in combat
 - A green frame on buttons whose buff is on you
-- Turn it off and the usual look comes back
+- Turn the square look off and the usual buttons come back; buff timers are a separate option
 - English and Russian
 - Minimap button
 - Settings: `/fcb`
 
 Made for Dominos. It also works with the default bars; for the cleanest look there, turn on "Hide Bar Art" for the main bar in Edit Mode.
 
-**Install:** unzip the `ForeverCleanButtons` folder into `World of Warcraft/_forever_/Interface/AddOns/` and restart the game.
+**Install:** unzip the `ForeverCleanButtons` folder into `World of Warcraft/_forever_/Interface/AddOns/` and type `/reload` in the game.
 
 MIT license.
 

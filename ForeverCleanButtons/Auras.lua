@@ -16,15 +16,17 @@ local _, ns = ...
 --
 -- Each buff's aura instance is remembered out of combat too: when an aura
 -- update in combat names a known instance (the game hides most of them, some
--- come through), an updated one starts again from its full duration and a
+-- come through), an updated one starts again from its full duration if you
+-- have just cast that spell (a shield taking a hit is an update too) and a
 -- removed one takes its timer with it. The game refuses addons the live
 -- duration in combat ("Auras cannot be accessed when secret while tainted").
 --
 -- Some buffs replace each other: only one seal can be on you. The game
 -- doesn't tell us in combat that the old one went, so the addon learns it out
--- of combat (a buff of yours that ends early just after you cast another one
--- on yourself is replaced by it) and remembers it. In combat, casting one of
--- them then ends the timers of the others.
+-- of combat (a buff of yours that ends early just after you put another one
+-- on yourself that wasn't on you, seen twice, is replaced by it) and
+-- remembers it. In combat, casting one of them then ends the timers of the
+-- others. /fcb forget clears what was learned.
 --
 -- A button whose buff is on you gets a coloured frame.
 
@@ -37,13 +39,17 @@ local byId = {}   -- [spellId] = expirationTime
 local byName = {} -- [spell name] = expirationTime
 local durationById = {}   -- [spellId] = full duration, kept for recasts in combat
 local durationByName = {} -- [spell name] = full duration
-local sentTo = {}         -- [castGUID] = who the cast was aimed at
+local sentTo = {}         -- [castGUID] = { target = who the cast was aimed at, at = when }
+local SENT_KEEP = 10      -- seconds a cast may take to report back, longer than any cast
+local castAt = {}         -- [spellId] or [spell name] = when your last cast of it went off
+local RECAST_WINDOW = 0.5 -- seconds: an aura update this soon after the cast is the recast
 local instById = {}       -- [spellId] = aura instance ID, read out of combat
 local instByName = {}     -- [spell name] = aura instance ID
 local spellOfInst = {}    -- [aura instance ID] = { id = spellId, name = spell name }
-local lastCast            -- { name, at }: your last cast aimed at yourself
+local lastCast            -- { name, at, new }: your last cast aimed at yourself, new: its buff wasn't on you
 local replaced = {}       -- { a, b, at }: buff a ended early just after b was cast, waiting for b to show
 local LEARN_WINDOW = 2    -- seconds between the cast and the buff it replaced ending
+local LEARN_SEEN = 2      -- a pair seen once may be chance (a proc used up, a drink cut short)
 local GLOW = { 0.35, 0.95, 0.45, 1 } -- the frame of a button whose buff is on you
 local ticker
 
@@ -63,8 +69,36 @@ end
 local function Groups()
 	local db = DB()
 	if not db then return nil end
+	-- groups saved by older versions came from one sighting and may be wrong: start again once
+	if (db.exclusiveVersion or 0) < 2 then
+		db.exclusive, db.exclusiveSeen, db.exclusiveVersion = {}, {}, 2
+	end
 	db.exclusive = db.exclusive or {}
 	return db.exclusive
+end
+
+-- One more sighting of two buffs replacing each other, saved till it is
+-- trusted: ["a\nb"] = times. True once seen often enough.
+local function Seen(a, b)
+	if not Groups() then return false end
+	local db = DB()
+	db.exclusiveSeen = db.exclusiveSeen or {}
+	local key = a < b and a .. "\n" .. b or b .. "\n" .. a
+	local times = (db.exclusiveSeen[key] or 0) + 1
+	if times < LEARN_SEEN then
+		db.exclusiveSeen[key] = times
+		return false
+	end
+	db.exclusiveSeen[key] = nil -- the group keeps it from now on
+	return true
+end
+
+-- /fcb forget: a wrong group would keep ending the wrong timers.
+function ns.ForgetAuraGroups()
+	local db = DB()
+	if not db then return end
+	db.exclusive, db.exclusiveSeen = {}, {}
+	wipe(replaced)
 end
 
 local function Join(a, b)
@@ -100,9 +134,10 @@ local function EndOthers(name)
 end
 
 -- Out of combat: a buff that ended early just after you cast another buff on
--- yourself was replaced by it, once that one shows.
+-- yourself was replaced by it, once that one shows. Only a buff the cast put
+-- on you anew counts: a renewed one replaced nothing.
 local function Learn(names, now)
-	if lastCast and now - lastCast.at < LEARN_WINDOW then
+	if lastCast and lastCast.new and now - lastCast.at < LEARN_WINDOW then
 		for name, expires in pairs(byName) do
 			if names[name] == nil and expires > now + 1 and name ~= lastCast.name then
 				replaced[#replaced + 1] = { a = name, b = lastCast.name, at = now }
@@ -112,7 +147,7 @@ local function Learn(names, now)
 	for i = #replaced, 1, -1 do
 		local r = replaced[i]
 		if names[r.b] then
-			Join(r.a, r.b)
+			if Seen(r.a, r.b) then Join(r.a, r.b) end
 			table.remove(replaced, i)
 		elseif now - r.at > LEARN_WINDOW then
 			table.remove(replaced, i)
@@ -176,11 +211,8 @@ local function ButtonSpell(button)
 	if type(action) ~= "number" or action <= 0 then return end
 	local kind, id, subType = GetActionInfo(action)
 	if kind == "spell" then return id end
-	if kind == "macro" then
-		-- newer clients hand the macro's spell ID back directly
-		if subType == "spell" then return id end
-		if GetMacroSpell then return GetMacroSpell(id) end
-	end
+	-- a macro hands back the spell it shows; for an item or nothing the ID isn't a spell
+	if kind == "macro" and subType == "spell" then return id end
 end
 
 -- When the button's buff ends (nil: not known) and whether it is on you.
@@ -342,7 +374,10 @@ end)
 -- name, or, when the name can't be read, no friendly target but you.
 local function AtSelf(target)
 	if Secret(target) then
-		return not (UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player"))
+		-- the answers can be secret too (UnitIsUnit in combat): then not known to be you
+		local exists, friend, me = UnitExists("target"), UnitIsFriend("player", "target"), UnitIsUnit("target", "player")
+		if Secret(exists) or Secret(friend) or Secret(me) then return false end
+		return not (exists and friend and not me)
 	end
 	if target == nil or target == "" then return true end
 	-- the name may come with the realm ("Name-Realm"): yours only on your realm
@@ -365,22 +400,28 @@ local function Log(...)
 end
 
 local function Recast(castGUID, spellId)
-	local target = sentTo[castGUID]
+	local sent = sentTo[castGUID]
 	sentTo[castGUID] = nil
 	if Secret(spellId) then return Log("secret spell") end
 	local name = SpellName(spellId)
 	if Secret(name) then name = nil end
-	if name and AtSelf(target) then
+	local now = GetTime()
+	castAt[spellId] = now
+	if name then castAt[name] = now end
+	-- no SENT seen for it (a triggered cast): where it went is not known, so not you
+	local target = sent and sent.target
+	local atSelf = sent ~= nil and AtSelf(target)
+	if name and atSelf then
 		EndOthers(name)
 		Queue()
 	end
 	-- only your own buffs have a known duration; anything else stops here
 	local duration = durationById[spellId] or (name and durationByName[name])
-	local shownTarget = Secret(target) and "<secret>" or target
+	local shownTarget = not sent and "<unknown>" or Secret(target) and "<secret>" or target
 	if not duration then return Log(spellId, name, "to", shownTarget, "- no known duration") end
-	if not AtSelf(target) then return Log(spellId, name, "to", shownTarget, "- not at you") end
+	if not atSelf then return Log(spellId, name, "to", shownTarget, "- not at you") end
 	Log(spellId, name, "to", shownTarget, "- restarted at", duration)
-	local expires = GetTime() + duration
+	local expires = now + duration
 	byId[spellId] = expires
 	if name then byName[name] = expires end
 	Queue()
@@ -390,10 +431,13 @@ local frame = CreateFrame("Frame")
 frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 	if event == "UNIT_SPELLCAST_SENT" then
 		-- unit, target, castGUID, spellId
-		if not Secret(b) and b then sentTo[b] = a end
+		if not Secret(b) and b then sentTo[b] = { target = a, at = GetTime() } end
 		-- the buff may change before the cast reports back
 		local name = c and not Secret(c) and SpellName(c)
-		if name and not Secret(name) and AtSelf(a) then lastCast = { name = name, at = GetTime() } end
+		if name and not Secret(name) and AtSelf(a) then
+			local now, known = GetTime(), byName[name]
+			lastCast = { name = name, at = now, new = not (known and known > now) }
+		end
 	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
 		-- unit, castGUID, spellId
 		if not Secret(a) and a and b then Recast(a, b) end
@@ -407,7 +451,11 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 		end
 		Refresh()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
-		wipe(sentTo) -- casts that never reported back
+		-- casts that never reported back; one still going keeps its target
+		local now = GetTime()
+		for guid, sent in pairs(sentTo) do
+			if now - sent.at > SENT_KEEP then sentTo[guid] = nil end
+		end
 		Refresh()
 	else
 		Queue()
@@ -434,6 +482,13 @@ local function Restart(owner)
 	if owner.name then byName[owner.name] = expires end
 end
 
+-- An update also comes when a shield soaks a hit or charges are used: only
+-- one right after your own cast of that spell is a recast.
+local function JustCast(owner)
+	local at = math.max((owner.id and castAt[owner.id]) or 0, (owner.name and castAt[owner.name]) or 0)
+	return GetTime() - at < RECAST_WINDOW
+end
+
 local function Ended(owner)
 	if owner.id then byId[owner.id] = nil end
 	if owner.name then byName[owner.name] = nil end
@@ -450,7 +505,7 @@ function ns.FollowAuraUpdate(info)
 	if type(updated) == "table" and Visible(updated) then
 		for _, inst in ipairs(updated) do
 			local owner = Visible(inst) and spellOfInst[inst]
-			if owner then Restart(owner) end
+			if owner and JustCast(owner) then Restart(owner) end
 		end
 	end
 	if type(added) == "table" and Visible(added) then

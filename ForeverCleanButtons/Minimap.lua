@@ -11,6 +11,7 @@ local DBIcon = LibStub("LibDBIcon-1.0")
 
 local broker = LibStub("LibDataBroker-1.1"):NewDataObject(ADDON, {
 	type = "launcher",
+	label = L.TITLE,
 	icon = ICON,
 	OnClick = function(_, mouse)
 		if mouse == "RightButton" then
@@ -26,21 +27,29 @@ local broker = LibStub("LibDataBroker-1.1"):NewDataObject(ADDON, {
 	end,
 })
 
--- LibDBIcon keeps the spot in db.minimapIcon; a reset gives a new table.
-local registeredWith
+-- LibDBIcon keeps the spot in db.minimapIcon; a reset can give a new table.
+local registeredWith, shown
 
--- Shown or hidden by the setting, grey while the addon is off.
+-- Shown or hidden by the setting, grey while the addon is off. Runs on every
+-- change of state (each fight too), so Show and Hide only go out when the
+-- setting really changed: Show puts the button back on the minimap's edge,
+-- out of a collector that took it in.
 function ns.UpdateMinimapButton()
 	local db = ns.DB()
 	db.minimapIcon = db.minimapIcon or { minimapPos = db.minimapAngle }
 	db.minimapIcon.hide = not db.minimapShow
-	if not registeredWith then
-		DBIcon:Register(ADDON, broker, db.minimapIcon)
-	elseif registeredWith ~= db.minimapIcon then
-		DBIcon:Refresh(ADDON, db.minimapIcon)
+	if registeredWith ~= db.minimapIcon then
+		if registeredWith then
+			DBIcon:Refresh(ADDON, db.minimapIcon)
+		else
+			DBIcon:Register(ADDON, broker, db.minimapIcon)
+		end
+		registeredWith, shown = db.minimapIcon, db.minimapShow
 	end
-	registeredWith = db.minimapIcon
-	if db.minimapShow then DBIcon:Show(ADDON) else DBIcon:Hide(ADDON) end
+	if db.minimapShow ~= shown then
+		shown = db.minimapShow
+		if shown then DBIcon:Show(ADDON) else DBIcon:Hide(ADDON) end
+	end
 	local button = DBIcon:GetMinimapButton(ADDON)
 	if button and button.icon then button.icon:SetDesaturated(not db.enabled) end
 end

@@ -7,7 +7,7 @@ local L = {
 	TITLE = "Forever Clean Buttons",
 
 	ENABLED = "Addon enabled",
-	ENABLED_HELP = "Off: the buttons get their usual look back.",
+	ENABLED_HELP = "Turns the square look on or off. Off: the buttons get their usual look back. Buff timers and green frames are a separate option below and stay as they are.",
 
 	PREVIEW = "Preview",
 
@@ -40,9 +40,10 @@ local L = {
 	MSG_WELCOME = "installed. Your buttons are now square. Settings: type |cffebbd61/fcb|r",
 	MSG_LOADED = "loaded. Settings: |cffebbd61/fcb|r",
 	MSG_ON = "on.",
-	MSG_OFF = "off, the buttons look as usual again.",
+	MSG_OFF = "off, the buttons look as usual again. Buff timers are a separate option: |cffebbd61/fcb|r",
 	MSG_RESET = "settings reset.",
-	MSG_HELP = "/fcb: window, /fcb on, /fcb off, /fcb toggle, /fcb lang auto/en/ru, /fcb reset",
+	MSG_FORGET = "forgot which buffs replace each other; it will be learned again.",
+	MSG_HELP = "/fcb: window, /fcb on, /fcb off, /fcb toggle, /fcb lang auto/en/ru, /fcb forget (forget which buffs replace each other), /fcb reset",
 
 	OPTIONS_OPEN = "Open the settings window",
 	OPTIONS_TEXT = "Every setting lives in the addon's own window.",
