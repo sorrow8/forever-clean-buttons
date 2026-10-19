@@ -20,6 +20,12 @@ local _, ns = ...
 -- removed one takes its timer with it. The game refuses addons the live
 -- duration in combat ("Auras cannot be accessed when secret while tainted").
 --
+-- Some buffs replace each other: only one seal can be on you. The game
+-- doesn't tell us in combat that the old one went, so the addon learns it out
+-- of combat (a buff of yours that ends early just after you cast another one
+-- on yourself is replaced by it) and remembers it. In combat, casting one of
+-- them then ends the timers of the others.
+--
 -- A button whose buff is on you gets a coloured frame.
 
 local FAST, SLOW = 0.2, 1 -- seconds between updates: while seconds show (a new one on time), or only minutes
@@ -35,6 +41,9 @@ local sentTo = {}         -- [castGUID] = who the cast was aimed at
 local instById = {}       -- [spellId] = aura instance ID, read out of combat
 local instByName = {}     -- [spell name] = aura instance ID
 local spellOfInst = {}    -- [aura instance ID] = { id = spellId, name = spell name }
+local lastCast            -- { name, at }: your last cast aimed at yourself
+local replaced = {}       -- { a, b, at }: buff a ended early just after b was cast, waiting for b to show
+local LEARN_WINDOW = 2    -- seconds between the cast and the buff it replaced ending
 local GLOW = { 0.35, 0.95, 0.45, 1 } -- the frame of a button whose buff is on you
 local ticker
 
@@ -47,6 +56,68 @@ end
 local function SpellName(spellId)
 	if C_Spell and C_Spell.GetSpellName then return C_Spell.GetSpellName(spellId) end
 	if GetSpellInfo then return (GetSpellInfo(spellId)) end
+end
+
+-- Buffs that replace each other, by spell name (all ranks), saved:
+-- [spell name] = group number.
+local function Groups()
+	local db = DB()
+	if not db then return nil end
+	db.exclusive = db.exclusive or {}
+	return db.exclusive
+end
+
+local function Join(a, b)
+	local groups = Groups()
+	if not groups or a == b then return end
+	local ga, gb = groups[a], groups[b]
+	if ga and ga == gb then return end
+	if not (ga or gb) then
+		local top = 0
+		for _, g in pairs(groups) do top = math.max(top, g) end
+		ga = top + 1
+	end
+	ga = ga or gb
+	if gb then
+		for name, g in pairs(groups) do if g == gb then groups[name] = ga end end
+	end
+	groups[a], groups[b] = ga, ga
+end
+
+-- You cast one of a group: the others are gone.
+local function EndOthers(name)
+	local groups = Groups()
+	local group = groups and groups[name]
+	if not group then return end
+	for other, g in pairs(groups) do
+		if g == group and other ~= name then
+			byName[other] = nil
+			for id in pairs(byId) do
+				if SpellName(id) == other then byId[id] = nil end
+			end
+		end
+	end
+end
+
+-- Out of combat: a buff that ended early just after you cast another buff on
+-- yourself was replaced by it, once that one shows.
+local function Learn(names, now)
+	if lastCast and now - lastCast.at < LEARN_WINDOW then
+		for name, expires in pairs(byName) do
+			if names[name] == nil and expires > now + 1 and name ~= lastCast.name then
+				replaced[#replaced + 1] = { a = name, b = lastCast.name, at = now }
+			end
+		end
+	end
+	for i = #replaced, 1, -1 do
+		local r = replaced[i]
+		if names[r.b] then
+			Join(r.a, r.b)
+			table.remove(replaced, i)
+		elseif now - r.at > LEARN_WINDOW then
+			table.remove(replaced, i)
+		end
+	end
 end
 
 -- Reading -----------------------------------------------------------------------
@@ -88,6 +159,8 @@ local function Scan()
 		for k, v in pairs(instById) do if insts[k] == nil then insts[k] = v end end
 		for k, v in pairs(instByName) do if instNames[k] == nil then instNames[k] = v end end
 		for k, v in pairs(spellOfInst) do if owners[k] == nil then owners[k] = v end end
+	else
+		Learn(names, GetTime())
 	end
 	byId, byName, instById, instByName, spellOfInst = ids, names, insts, instNames, owners
 	return true
@@ -297,6 +370,10 @@ local function Recast(castGUID, spellId)
 	if Secret(spellId) then return Log("secret spell") end
 	local name = SpellName(spellId)
 	if Secret(name) then name = nil end
+	if name and AtSelf(target) then
+		EndOthers(name)
+		Queue()
+	end
 	-- only your own buffs have a known duration; anything else stops here
 	local duration = durationById[spellId] or (name and durationByName[name])
 	local shownTarget = Secret(target) and "<secret>" or target
@@ -314,6 +391,9 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 	if event == "UNIT_SPELLCAST_SENT" then
 		-- unit, target, castGUID, spellId
 		if not Secret(b) and b then sentTo[b] = a end
+		-- the buff may change before the cast reports back
+		local name = c and not Secret(c) and SpellName(c)
+		if name and not Secret(name) and AtSelf(a) then lastCast = { name = name, at = GetTime() } end
 	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
 		-- unit, castGUID, spellId
 		if not Secret(a) and a and b then Recast(a, b) end
@@ -424,6 +504,7 @@ function ns.DebugAuras()
 	for id, inst in pairs(instById) do ns.Print(("instance: %s %s #%s"):format(id, tostring(SpellName(id)), inst)) end
 	ns.Print("last aura update: " .. lastUpdate)
 	for id, d in pairs(durationById) do ns.Print(("known: %s %s = %ss"):format(id, tostring(SpellName(id)), d)) end
+	for name, g in pairs(Groups() or {}) do ns.Print(("replace each other (%d): %s"):format(g, name)) end
 	for i, line in ipairs(castLog) do ns.Print(i .. ". " .. line) end
 	if not castLog[1] then ns.Print("no casts of your own buffs seen yet") end
 end

@@ -1,3 +1,7 @@
+# 1.2.2
+
+- Fix: swapping seals in combat left the old seal's timer and green frame on its button until it would have run out. Buffs that replace each other (only one seal can be on you) are learned out of combat, once, and from then on casting one ends the others' timers at once, in combat too.
+
 # 1.2.1
 
 - Buff timers show seconds as a bare number ("15" instead of "15s"); minutes, hours and days keep their letter.
