@@ -308,8 +308,8 @@ local function Text(button)
 	return fs
 end
 
--- Where the gold outline of auto attack sits (the skin fits it inside the
--- border); without the skin, the whole button.
+-- Where the gold outline of auto attack sits: over the whole button, border
+-- included, with or without the skin.
 local function Glow(button, on)
 	local holder = holders[button]
 	local t = holder and holder.glow

@@ -275,6 +275,10 @@ local SAMPLES = {
 	"Interface\\Icons\\Ability_Hunter_SniperShot",
 }
 local SAMPLE_SIZE, SAMPLE_GAP = 40, 8
+-- the sample with a buff on you: its time left and green frame, as on a real button
+local BUFF_SAMPLE, BUFF_TEXT = 2, "28"
+local BUFF_GLOW = { 0.35, 0.95, 0.45, 1 }
+local OUTLINE = "Interface\\AddOns\\" .. ADDON .. "\\media\\outline"
 
 local function Preview(parent, y)
 	local card = CreateFrame("Frame", nil, parent)
@@ -297,6 +301,17 @@ local function Preview(parent, y)
 		f.icon = f:CreateTexture(nil, "ARTWORK")
 		f.icon:SetTexture(file)
 		f.icon:SetAllPoints(f.inner)
+		if i == BUFF_SAMPLE then
+			f.glow = f:CreateTexture(nil, "OVERLAY")
+			f.glow:SetTexture(OUTLINE)
+			f.glow:SetVertexColor(BUFF_GLOW[1], BUFF_GLOW[2], BUFF_GLOW[3], BUFF_GLOW[4])
+			f.time = f:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+			f.time:SetPoint("CENTER")
+			local font = f.time:GetFont()
+			if font then f.time:SetFont(font, math.floor(SAMPLE_SIZE * 0.45 + 0.5), "OUTLINE") end
+			f.time:SetTextColor(1, 1, 1)
+			f.time:SetText(BUFF_TEXT)
+		end
 		card.samples[i] = f
 	end
 
@@ -313,6 +328,12 @@ local function Preview(parent, y)
 				f.icon:SetTexCoord(ns.Crop())
 			else
 				f.icon:SetTexCoord(0, 1, 0, 1)
+			end
+			if f.glow then
+				f.glow:ClearAllPoints()
+				f.glow:SetAllPoints(f)
+				f.glow:SetShown(db.auraTimers)
+				f.time:SetShown(db.auraTimers)
 			end
 		end
 	end

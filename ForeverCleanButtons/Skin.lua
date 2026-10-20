@@ -208,13 +208,16 @@ local function Layout(button)
 	p.outer:Show()
 end
 
-local function Outline(button, r, anchor, color)
+-- Highlight frames (checked, auto attack, equipped, bag and menu flashes)
+-- cover the whole button, border included, so a coloured border never shows
+-- around them.
+local function Outline(button, r, color)
 	if not r then return end
 	Save(button, r)
 	r:SetTexture(OUTLINE)
 	if color then r:SetVertexColor(color[1], color[2], color[3]) end
 	r:SetBlendMode("BLEND")
-	Fit(button, r, anchor)
+	Fit(button, r, parts[button].outer)
 end
 
 local function Pushed(button, inner)
@@ -254,10 +257,10 @@ function STYLE.action(button)
 	Hide(button, button:GetNormalTexture())
 	Pushed(button, inner)
 	Highlight(button, inner)
-	Outline(button, button:GetCheckedTexture(), inner, GOLD)
-	Outline(button, button.Border, inner) -- equipped items; the stock UI tints it green
-	Outline(button, button.NewActionTexture, inner, GOLD)
-	Outline(button, button.SpellHighlightTexture, inner, GOLD)
+	Outline(button, button:GetCheckedTexture(), GOLD)
+	Outline(button, button.Border) -- equipped items; the stock UI tints it green
+	Outline(button, button.NewActionTexture, GOLD)
+	Outline(button, button.SpellHighlightTexture, GOLD)
 
 	if button.Flash then
 		Save(button, button.Flash)
@@ -288,7 +291,7 @@ function STYLE.bag(button)
 	Hide(button, button.IconBorder)
 	Pushed(button, inner)
 	Highlight(button, inner)
-	Outline(button, button.SlotHighlightTexture, inner, GOLD)
+	Outline(button, button.SlotHighlightTexture, GOLD)
 end
 
 -- Micro button pictures are taller than wide; cut the middle square out of
@@ -343,7 +346,7 @@ function STYLE.micro(button)
 		SquareAtlas(button.FlashContent)
 		Fit(button, button.FlashContent, inner)
 	end
-	Outline(button, button.FlashBorder, inner, GOLD)
+	Outline(button, button.FlashBorder, GOLD)
 	Portrait(button)
 end
 
