@@ -20,8 +20,6 @@ Made for Dominos. It also works with the default bars; for the cleanest look the
 
 **Install:** unzip the `ForeverCleanButtons` folder into `World of Warcraft/_forever_/Interface/AddOns/`. If the game is already running, type `/reload`.
 
-MIT license.
-
 ---
 
 **RU:** квадратные чёткие кнопки с тонкой рамкой. Сделан под Dominos, со стандартными панелями тоже работает: для лучшего вида включи «Скрыть оформление панели» у главной панели в режиме редактирования. Время своих баффов показывается на кнопке заклинания (отдельная настройка). Настройки: `/fcb`.
