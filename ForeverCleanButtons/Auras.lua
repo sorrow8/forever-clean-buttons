@@ -66,8 +66,6 @@ local function SpellName(spellId)
 	if GetSpellInfo then return (GetSpellInfo(spellId)) end
 end
 
--- Buffs that replace each other, by spell name (all ranks), saved:
--- [spell name] = group number.
 -- A buff's full duration as last seen out of combat, kept over a reload: a
 -- seal first cast in combat after /reload still gets its timer.
 local function SavedDuration(name)
@@ -75,6 +73,8 @@ local function SavedDuration(name)
 	return db and db.durations and db.durations[name]
 end
 
+-- Buffs that replace each other, by spell name (all ranks), saved:
+-- [spell name] = group number.
 local function Groups()
 	local db = DB()
 	if not db then return nil end
@@ -86,21 +86,22 @@ local function Groups()
 	return db.exclusive
 end
 
--- Buffs of one family share a word at the start or the end of their name:
--- Seal of Fury / Seal of Righteousness, Devotion Aura / Retribution Aura.
-local function FirstWord(name) return name:match("^(%S+)") end
-local function LastWord(name) return name:match("(%S+)$") end
-local function SameFamily(a, b)
-	local fa, fb, la, lb = FirstWord(a), FirstWord(b), LastWord(a), LastWord(b)
-	return (fa ~= nil and fa == fb and fa ~= a) or (la ~= nil and la == lb and la ~= a)
+-- Seals, auras and aspects replace each other by the game's own rules: these
+-- need no learning, so a swap in combat ends the old one at once. Other
+-- buffs that share a word (Power Word: Shield / Power Word: Fortitude) don't.
+local function Kind(name)
+	if name:match("^Seal of ") or name:match("^Печать ") then return "seal" end
+	if name:match("^Aspect of ") then return "aspect" end
+	if name:match(" Aura$") or name:match("^Аура ") then return "aura" end
 end
 
 -- One more sighting of two buffs replacing each other, saved till it is
--- trusted: ["a\nb"] = times. True once seen often enough; a family (seals,
--- auras) is trusted at once, so swapping seals is learned on the first swap.
+-- trusted: ["a\nb"] = times. True once seen often enough; seals, auras and
+-- aspects are trusted at once.
 local function Seen(a, b)
 	if not Groups() then return false end
-	if SameFamily(a, b) then return true end
+	local kind = Kind(a)
+	if kind and kind == Kind(b) then return true end
 	local db = DB()
 	db.exclusiveSeen = db.exclusiveSeen or {}
 	local key = a < b and a .. "\n" .. b or b .. "\n" .. a
@@ -136,14 +137,6 @@ local function Join(a, b)
 		for name, g in pairs(groups) do if g == gb then groups[name] = ga end end
 	end
 	groups[a], groups[b] = ga, ga
-end
-
--- Seals, auras and aspects replace each other by the game's own rules: these
--- need no learning, so a swap in combat ends the old one at once.
-local function Kind(name)
-	if name:match("^Seal of ") then return "seal" end
-	if name:match("^Aspect of ") then return "aspect" end
-	if name:match(" Aura$") then return "aura" end
 end
 
 -- You cast one of a group: the others are gone.
@@ -196,12 +189,16 @@ local function Scan()
 	local hidden = false
 	for i = 1, 255 do
 		local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-		if not ok or not aura then break end
+		-- refused (a battleground, an arena): keep what is known
+		if not ok then return false end
+		if not aura then break end
 		if issecrettable and issecrettable(aura) then return false end
 		local source, expires, id, name, duration = aura.sourceUnit, aura.expirationTime, aura.spellId, aura.name, aura.duration
 		if Secret(source) or Secret(expires) or Secret(id) or Secret(name) or Secret(duration) then
 			hidden = true
-		elseif source == "player" and expires and expires > 0 then
+		elseif source == "player" and expires then
+			-- a permanent one (a paladin aura, an aspect) is on, with no time
+			if expires <= 0 then expires = UNKNOWN end
 			if id then ids[id] = expires end
 			if name then names[name] = expires end
 			local inst = aura.auraInstanceID
@@ -407,17 +404,33 @@ end)
 
 -- Recasts -------------------------------------------------------------------------------
 
+-- A spell that can only go on you: a seal, an aura, an aspect (no range, or
+-- the game says its effects are yours alone).
+local function SelfOnly(spellId)
+	if not spellId or Secret(spellId) or not C_Spell then return false end
+	if C_Spell.IsSelfBuff then
+		local ok, yes = pcall(C_Spell.IsSelfBuff, spellId)
+		if ok and not Secret(yes) and yes then return true end
+	end
+	if C_Spell.SpellHasRange then
+		local ok, ranged = pcall(C_Spell.SpellHasRange, spellId)
+		if ok and not Secret(ranged) and ranged == false then return true end
+	end
+	return false
+end
+
 -- Whether a cast went to you: no target (seals, self-only buffs), your own
--- name, or, when the name can't be read, no friendly target but you.
-local function AtSelf(target)
+-- name, or, when the name can't be read, a spell that can only go on you, no
+-- target or an enemy one. A buff on a friend whose name is hidden is not
+-- yours: a Renew on the tank mustn't restart your own.
+local function AtSelf(target, spellId)
 	if Secret(target) then
-		-- the answers can be secret too (UnitIsUnit in combat): an enemy or no
-		-- target means you; one that can't be read is taken as you, as a seal
-		-- cast on an enemy in combat must still count
+		local spell = spellId and not Secret(spellId) and SpellName(spellId)
+		if SelfOnly(spellId) or (spell and not Secret(spell) and Kind(spell)) then return true end
 		local exists, friend, me = UnitExists("target"), UnitIsFriend("player", "target"), UnitIsUnit("target", "player")
 		if not Secret(exists) and not exists then return true end
 		if not Secret(friend) and not friend then return true end
-		if Secret(exists) or Secret(friend) or Secret(me) then return true end
+		if Secret(exists) or Secret(friend) or Secret(me) then return false end
 		return me
 	end
 	if target == nil or target == "" then return true end
@@ -449,10 +462,11 @@ local function Recast(castGUID, spellId)
 	local now = GetTime()
 	castAt[spellId] = now
 	if name then castAt[name] = now end
-	-- no SENT seen for it: in combat the game may keep it from addons, so a
-	-- cast with no known target counts as yours, as a seal always is
+	-- no SENT seen for it (the game may keep it from addons in combat): only a
+	-- spell that can go on you alone, like a seal, counts as yours
 	local target = sent and sent.target
-	local atSelf = AtSelf(target)
+	local atSelf
+	if sent then atSelf = AtSelf(target, spellId) else atSelf = SelfOnly(spellId) or (name ~= nil and Kind(name) ~= nil) end
 	if name and atSelf then
 		EndOthers(name)
 		Queue()
@@ -484,7 +498,7 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 		if not Secret(b) and b then sentTo[b] = { target = a, at = GetTime() } end
 		-- the buff may change before the cast reports back
 		local name = c and not Secret(c) and SpellName(c)
-		if name and not Secret(name) and AtSelf(a) then
+		if name and not Secret(name) and AtSelf(a, c) then
 			local now, known = GetTime(), byName[name]
 			lastCast = { name = name, at = now, new = not (known and known > now) }
 		end
