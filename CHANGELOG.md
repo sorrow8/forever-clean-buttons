@@ -1,3 +1,14 @@
+# 1.2.6
+
+- Empty slots on a bar are see-through like the game's own, not solid black squares.
+- Highlight frames (a buff on you, auto attack, the active ability, equipped items) cover the whole button, so a class-coloured border no longer shows around them.
+- The preview in the window shows a buff timer and its green frame too.
+- A buff you cast in combat on a friend no longer restarts your own timer of it.
+- In battlegrounds and arenas the timers you have stay when the game refuses to show auras.
+- Your permanent auras get the green frame without a time.
+- Seals and auras are recognised on Russian clients, and Power Word: Shield no longer counts as Power Word: Fortitude.
+- The Options button no longer closes the game's Options.
+
 # 1.2.5
 
 - A pressed button lights up instead of greying out.
