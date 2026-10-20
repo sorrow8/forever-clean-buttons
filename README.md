@@ -6,6 +6,8 @@ Forever Clean Buttons makes your action bars square and sharp with a thin pixel 
 
 ![Action bar with clean buttons](docs/screenshot.png)
 
+![Settings window](docs/settings.png)
+
 - Square icons, 1-pixel border, no rounded masks or blurry frame art
 - Works with Dominos or the default bars, bag and menu buttons included
 - Border thickness, colour and icon zoom, with a live preview
