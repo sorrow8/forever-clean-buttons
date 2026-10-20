@@ -22,6 +22,8 @@ local COLORS = {
 	gold = { 0.92, 0.74, 0.38 },
 }
 local MICRO_FILL = { 0.05, 0.05, 0.06, 0.92 }
+-- an empty action slot: see-through like the stock one, no border
+local EMPTY_FILL = { 0, 0, 0, 0.35 }
 
 local ACTION_BUTTONS = {
 	{ "ActionButton", 12 },
@@ -163,6 +165,27 @@ local function Parts(button)
 	return p
 end
 
+-- The game hides the icon of an action slot with nothing in it. Such a slot
+-- (a bar shown in full, or every slot while a spell is dragged) would
+-- otherwise be a solid black block.
+local function Empty(button)
+	return kinds[button] == "action" and button.icon ~= nil and not button.icon:IsShown()
+end
+
+local function Fill(button)
+	local p = parts[button]
+	if Empty(button) then
+		p.outer:SetColorTexture(EMPTY_FILL[1], EMPTY_FILL[2], EMPTY_FILL[3], EMPTY_FILL[4])
+		p.inner:Hide()
+		return
+	end
+	local c = ns.BorderColor()
+	p.outer:SetColorTexture(c[1], c[2], c[3], 1)
+	local fill = kinds[button] == "micro" and MICRO_FILL or COLORS.black
+	p.inner:SetColorTexture(fill[1], fill[2], fill[3], fill[4] or 1)
+	p.inner:Show()
+end
+
 local function Layout(button)
 	local p = parts[button]
 	local db = DB()
@@ -181,12 +204,8 @@ local function Layout(button)
 	p.inner:SetPoint("TOPLEFT", p.outer, "TOPLEFT", edge, -edge)
 	p.inner:SetPoint("BOTTOMRIGHT", p.outer, "BOTTOMRIGHT", -edge, edge)
 
-	local c = ns.BorderColor()
-	p.outer:SetColorTexture(c[1], c[2], c[3], 1)
-	local fill = kinds[button] == "micro" and MICRO_FILL or COLORS.black
-	p.inner:SetColorTexture(fill[1], fill[2], fill[3], fill[4] or 1)
+	Fill(button)
 	p.outer:Show()
-	p.inner:Show()
 end
 
 local function Outline(button, r, anchor, color)
@@ -380,6 +399,13 @@ local function Hook(button)
 
 	if kind == "action" then
 		if button.UpdateButtonArt then hooksecurefunc(button, "UpdateButtonArt", Again) end
+		-- a spell put in or taken out of the slot
+		local function Refill()
+			if Skinned(button) then Fill(button) end
+		end
+		for _, method in ipairs({ "Show", "Hide", "SetShown" }) do
+			hooksecurefunc(button.icon, method, Refill)
+		end
 	elseif kind == "bag" then
 		if button.UpdateTextures then hooksecurefunc(button, "UpdateTextures", Again) end
 		local function Icon()
