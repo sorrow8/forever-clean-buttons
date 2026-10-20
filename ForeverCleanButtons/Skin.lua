@@ -202,7 +202,10 @@ local function Pushed(button, inner)
 	local pushed = button:GetPushedTexture()
 	if not pushed then return end
 	Save(button, pushed)
-	pushed:SetColorTexture(0, 0, 0, 0.4)
+	-- a press lights the icon up, twice as bright as the mouse-over, instead of
+	-- greying it out
+	pushed:SetColorTexture(1, 1, 1, 0.3)
+	pushed:SetBlendMode("ADD")
 	Fit(button, pushed, inner)
 end
 

@@ -1,3 +1,11 @@
+# 1.2.5
+
+- A pressed button lights up instead of greying out.
+- Fix: since 1.2.4 a seal swapped in combat left the old seal lit and the new one dark. A cast whose target the game hides in combat counts as cast on you again, and seals, auras and aspects replace each other at once, with nothing to learn first.
+- A buff's full duration is remembered over /reload, so a seal first cast in combat after a reload still gets its timer. A seal not seen out of combat yet gets its green frame without a time.
+- The green frame of a buff on you is as thin as the gold frame of auto attack, and both are a little thicker.
+- Known limit: a buff you click off in combat stays lit until its timer runs out or the fight ends. The game tells addons nothing about auras in combat.
+
 # 1.2.4
 
 - The minimap button stays where a minimap button collector (like Leatrix Plus) put it: it was put back on the minimap's edge at every fight.

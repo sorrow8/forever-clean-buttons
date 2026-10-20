@@ -50,6 +50,8 @@ local lastCast            -- { name, at, new }: your last cast aimed at yourself
 local replaced = {}       -- { a, b, at }: buff a ended early just after b was cast, waiting for b to show
 local LEARN_WINDOW = 2    -- seconds between the cast and the buff it replaced ending
 local LEARN_SEEN = 2      -- a pair seen once may be chance (a proc used up, a drink cut short)
+local UNKNOWN = math.huge  -- a buff that is on, but how long it lasts isn't known yet
+local OUTLINE = "Interface\\AddOns\\ForeverCleanButtons\\media\\outline" -- the skin's outline
 local GLOW = { 0.35, 0.95, 0.45, 1 } -- the frame of a button whose buff is on you
 local ticker
 
@@ -66,6 +68,13 @@ end
 
 -- Buffs that replace each other, by spell name (all ranks), saved:
 -- [spell name] = group number.
+-- A buff's full duration as last seen out of combat, kept over a reload: a
+-- seal first cast in combat after /reload still gets its timer.
+local function SavedDuration(name)
+	local db = name and DB()
+	return db and db.durations and db.durations[name]
+end
+
 local function Groups()
 	local db = DB()
 	if not db then return nil end
@@ -129,18 +138,28 @@ local function Join(a, b)
 	groups[a], groups[b] = ga, ga
 end
 
+-- Seals, auras and aspects replace each other by the game's own rules: these
+-- need no learning, so a swap in combat ends the old one at once.
+local function Kind(name)
+	if name:match("^Seal of ") then return "seal" end
+	if name:match("^Aspect of ") then return "aspect" end
+	if name:match(" Aura$") then return "aura" end
+end
+
 -- You cast one of a group: the others are gone.
 local function EndOthers(name)
-	local groups = Groups()
+	local groups, kind = Groups(), Kind(name)
 	local group = groups and groups[name]
-	if not group then return end
-	for other, g in pairs(groups) do
-		if g == group and other ~= name then
-			byName[other] = nil
-			for id in pairs(byId) do
-				if SpellName(id) == other then byId[id] = nil end
-			end
-		end
+	local function Replaced(other)
+		if other == name then return false end
+		return (group ~= nil and groups[other] == group) or (kind ~= nil and Kind(other) == kind)
+	end
+	for other in pairs(byName) do
+		if Replaced(other) then byName[other] = nil end
+	end
+	for id in pairs(byId) do
+		local other = SpellName(id)
+		if other and not Secret(other) and Replaced(other) then byId[id] = nil end
 	end
 end
 
@@ -193,7 +212,14 @@ local function Scan()
 			end
 			if duration and duration > 0 then
 				if id then durationById[id] = duration end
-				if name then durationByName[name] = duration end
+				if name then
+					durationByName[name] = duration
+					local db = DB()
+					if db then
+						db.durations = db.durations or {}
+						db.durations[name] = duration
+					end
+				end
 			end
 		end
 	end
@@ -272,34 +298,32 @@ local function Text(button)
 		holder:SetScript("OnSizeChanged", Resize)
 		-- a bar that shows up later (in combat only, after Alt+Z) gets its timers
 		holder:SetScript("OnShow", function() ns.QueueAuraTimers() end)
-		-- the coloured frame of a buff that is on you, inside the button's edge
+		-- the coloured frame of a buff that is on you: the same outline as the
+		-- gold one of auto attack, so both are equally thin
 		holders[button] = holder
-		holder.glow = {}
-		for i, side in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
-			local t = holder:CreateTexture(nil, "OVERLAY")
-			t:SetColorTexture(GLOW[1], GLOW[2], GLOW[3], GLOW[4])
-			t:SetPoint(side[1])
-			t:SetPoint(side[2])
-			t.horizontal = i <= 2
-			t:Hide()
-			holder.glow[i] = t
-		end
+		local t = holder:CreateTexture(nil, "OVERLAY")
+		t:SetTexture(OUTLINE)
+		t:SetVertexColor(GLOW[1], GLOW[2], GLOW[3], GLOW[4])
+		t:Hide()
+		holder.glow = t
 		texts[button] = fs
 	end
 	return fs
 end
 
--- Two screen pixels wide, whatever the bar's scale.
+-- Where the gold outline of auto attack sits (the skin fits it inside the
+-- border); without the skin, the whole button.
 local function Glow(button, on)
 	local holder = holders[button]
-	if not holder or not holder.glow then return end
-	local px = 1
-	if PixelUtil and PixelUtil.GetPixelToUIUnitFactor then
-		px = PixelUtil.GetPixelToUIUnitFactor() / button:GetEffectiveScale()
-	end
-	for _, t in ipairs(holder.glow) do
-		if t.horizontal then t:SetHeight(2 * px) else t:SetWidth(2 * px) end
-		if on then t:Show() else t:Hide() end
+	local t = holder and holder.glow
+	if not t then return end
+	if on then
+		local checked = button.GetCheckedTexture and button:GetCheckedTexture()
+		t:ClearAllPoints()
+		if checked and DB() and DB().enabled then t:SetAllPoints(checked) else t:SetAllPoints(holder) end
+		t:Show()
+	else
+		t:Hide()
 	end
 end
 
@@ -332,7 +356,9 @@ Update = function()
 		if on and button:IsVisible() then expires, isOn = Expires(button) end
 		Glow(button, isOn)
 		local left = expires and expires - now
-		if left and left > 0 then
+		if left == UNKNOWN then
+			fs:Hide() -- on: the frame shows it, there's no time to show
+		elseif left and left > 0 then
 			local text = ns.FormatAuraTime(left)
 			if shownText[fs] ~= text then
 				fs:SetText(text)
@@ -385,10 +411,14 @@ end)
 -- name, or, when the name can't be read, no friendly target but you.
 local function AtSelf(target)
 	if Secret(target) then
-		-- the answers can be secret too (UnitIsUnit in combat): then not known to be you
+		-- the answers can be secret too (UnitIsUnit in combat): an enemy or no
+		-- target means you; one that can't be read is taken as you, as a seal
+		-- cast on an enemy in combat must still count
 		local exists, friend, me = UnitExists("target"), UnitIsFriend("player", "target"), UnitIsUnit("target", "player")
-		if Secret(exists) or Secret(friend) or Secret(me) then return false end
-		return not (exists and friend and not me)
+		if not Secret(exists) and not exists then return true end
+		if not Secret(friend) and not friend then return true end
+		if Secret(exists) or Secret(friend) or Secret(me) then return true end
+		return me
 	end
 	if target == nil or target == "" then return true end
 	-- the name may come with the realm ("Name-Realm"): yours only on your realm
@@ -419,17 +449,26 @@ local function Recast(castGUID, spellId)
 	local now = GetTime()
 	castAt[spellId] = now
 	if name then castAt[name] = now end
-	-- no SENT seen for it (a triggered cast): where it went is not known, so not you
+	-- no SENT seen for it: in combat the game may keep it from addons, so a
+	-- cast with no known target counts as yours, as a seal always is
 	local target = sent and sent.target
-	local atSelf = sent ~= nil and AtSelf(target)
+	local atSelf = AtSelf(target)
 	if name and atSelf then
 		EndOthers(name)
 		Queue()
 	end
 	-- only your own buffs have a known duration; anything else stops here
-	local duration = durationById[spellId] or (name and durationByName[name])
+	local duration = durationById[spellId] or (name and (durationByName[name] or SavedDuration(name)))
 	local shownTarget = not sent and "<unknown>" or Secret(target) and "<secret>" or target
-	if not duration then return Log(spellId, name, "to", shownTarget, "- no known duration") end
+	if not duration then
+		-- a seal, aura or aspect not seen out of combat yet: on, time not known
+		if name and atSelf and Kind(name) then
+			byName[name] = UNKNOWN
+			Queue()
+			return Log(spellId, name, "to", shownTarget, "- on, time not known yet")
+		end
+		return Log(spellId, name, "to", shownTarget, "- no known duration")
+	end
 	if not atSelf then return Log(spellId, name, "to", shownTarget, "- not at you") end
 	Log(spellId, name, "to", shownTarget, "- restarted at", duration)
 	local expires = now + duration
@@ -486,7 +525,7 @@ ns.OnChange(Update)
 
 -- A known buff starts again from its full duration (a recast) or ends.
 local function Restart(owner)
-	local duration = (owner.id and durationById[owner.id]) or (owner.name and durationByName[owner.name])
+	local duration = (owner.id and durationById[owner.id]) or (owner.name and (durationByName[owner.name] or SavedDuration(owner.name)))
 	if not duration then return end
 	local expires = GetTime() + duration
 	if owner.id then byId[owner.id] = expires end
