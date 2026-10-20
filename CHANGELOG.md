@@ -1,3 +1,11 @@
+# 1.2.7
+
+- Seal of Command, Lightning Shield, Thorns and other buffs whose hits set off a spell of the same name no longer jump back to full time each time they go off.
+- Putting on another buff of the same kind in combat ends the old one's timer at once: seals, auras, aspects, mage and warlock armors, Lightning and Water Shield, blessings, and buffs with a group version (Arcane Intellect, Fortitude, Mark of the Wild and the like).
+- Slice and Dice and Savage Roar recast in combat show the green frame without a time until the fight ends: their length depends on combo points.
+- Two of your buffs with the same name (a seal and a shield its hits put on you) no longer mix up their times.
+- Seals, auras and aspects are recognised in every game language.
+
 # 1.2.6
 
 - Empty slots on a bar are see-through like the game's own, not solid black squares.

@@ -39,6 +39,7 @@ local byId = {}   -- [spellId] = expirationTime
 local byName = {} -- [spell name] = expirationTime
 local durationById = {}   -- [spellId] = full duration, kept for recasts in combat
 local durationByName = {} -- [spell name] = full duration
+local durationKnown = {}  -- [spell name] = true: its duration came from a spell you know
 local sentTo = {}         -- [castGUID] = { target = who the cast was aimed at, at = when }
 local SENT_KEEP = 10      -- seconds a cast may take to report back, longer than any cast
 local castAt = {}         -- [spellId] or [spell name] = when your last cast of it went off
@@ -66,6 +67,17 @@ local function SpellName(spellId)
 	if GetSpellInfo then return (GetSpellInfo(spellId)) end
 end
 
+-- A spell you know, not one set off by another: a Seal of Command hit is a
+-- spell of its own with the seal's name, and must not restart the seal.
+local function Known(spellId)
+	local book = C_SpellBook
+	local check = (book and (book.IsSpellKnownOrInSpellBook or book.IsSpellKnown)) or IsPlayerSpell
+	if not check or not spellId then return true end
+	local ok, yes = pcall(check, spellId)
+	if not ok or Secret(yes) then return true end
+	return yes
+end
+
 -- A buff's full duration as last seen out of combat, kept over a reload: a
 -- seal first cast in combat after /reload still gets its timer.
 local function SavedDuration(name)
@@ -89,10 +101,63 @@ end
 -- Seals, auras and aspects replace each other by the game's own rules: these
 -- need no learning, so a swap in combat ends the old one at once. Other
 -- buffs that share a word (Power Word: Shield / Power Word: Fortitude) don't.
+-- The spells are also known by ID, so their names in any game language count.
+-- Seals, auras, aspects, armors and elemental shields can only go on you; the
+-- others can go on a friend too.
+local KINDS = {
+	seal = { 21084, 20375, 21082, 20164, 20165, 20166, 20163 },
+	aura = { 465, 7294, 19746, 19876, 19888, 19891 },
+	aspect = { 13165, 13163, 5118, 13159, 20043, 13161 },
+	magearmor = { 168, 7302, 6117 },
+	demonarmor = { 687, 706 },
+	shield = { 324, 408510 }, -- Lightning Shield, Water Shield
+	-- one blessing from each paladin, the Greater ones too
+	blessing = { 19740, 19742, 20217, 19977, 25782, 25894, 25898, 25890 },
+	intellect = { 1459, 23028 },
+	fortitude = { 1243, 21562 },
+	spirit = { 14752, 27681 },
+	shadowprotection = { 976, 27683 },
+	wild = { 1126, 21849 },
+}
+local SELF_ONLY = { seal = true, aura = true, aspect = true, magearmor = true, demonarmor = true, shield = true }
+local kindByName
 local function Kind(name)
+	if not kindByName then
+		kindByName = {}
+		for kind, ids in pairs(KINDS) do
+			for _, id in ipairs(ids) do
+				local spell = SpellName(id)
+				if spell and not Secret(spell) then kindByName[spell] = kind end
+			end
+		end
+	end
+	if kindByName[name] then return kindByName[name] end
 	if name:match("^Seal of ") or name:match("^Печать ") then return "seal" end
 	if name:match("^Aspect of ") then return "aspect" end
 	if name:match(" Aura$") or name:match("^Аура ") then return "aura" end
+end
+
+-- Buffs whose length depends on combo points (Slice and Dice, Savage Roar):
+-- a recast in combat can't know it, so the button shows the buff is on, and
+-- the time comes back once the fight ends.
+local VARIES = { 5171, 6774, 407988 }
+local variesByName
+local function Varies(id, name)
+	if not variesByName then
+		variesByName = {}
+		for _, v in ipairs(VARIES) do
+			variesByName[v] = true
+			local spell = SpellName(v)
+			if spell and not Secret(spell) then variesByName[spell] = true end
+		end
+	end
+	return (id ~= nil and variesByName[id]) or (name ~= nil and variesByName[name]) or false
+end
+
+-- One of the kinds that can only be on you.
+local function SelfKind(name)
+	local kind = name and Kind(name)
+	return kind ~= nil and SELF_ONLY[kind] == true
 end
 
 -- One more sighting of two buffs replacing each other, saved till it is
@@ -187,6 +252,8 @@ local function Scan()
 	if not (C_UnitAuras and C_UnitAuras.GetAuraDataByIndex) then return false end
 	local ids, names, insts, instNames, owners = {}, {}, {}, {}, {}
 	local hidden = false
+	local found = {}  -- your buffs: { id, name, expires, duration, inst, mine }
+	local byNameBest = {} -- [spell name] = the one of found the name stands for
 	for i = 1, 255 do
 		local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
 		-- refused (a battleground, an arena): keep what is known
@@ -199,23 +266,40 @@ local function Scan()
 		elseif source == "player" and expires then
 			-- a permanent one (a paladin aura, an aspect) is on, with no time
 			if expires <= 0 then expires = UNKNOWN end
-			if id then ids[id] = expires end
-			if name then names[name] = expires end
 			local inst = aura.auraInstanceID
-			if inst and not Secret(inst) then
-				if id then insts[id] = inst end
-				if name then instNames[name] = inst end
-				owners[inst] = { id = id, name = name }
+			if Secret(inst) then inst = nil end
+			local f = { id = id, name = name, expires = expires, duration = duration or 0, inst = inst, mine = Known(id) }
+			found[#found + 1] = f
+			-- two of your buffs can share a name (a seal and a shield its hits
+			-- put on you): the one from a spell you know stands for the name,
+			-- else the longer one
+			local best = name and byNameBest[name]
+			if name and (not best or (f.mine and not best.mine) or (f.mine == best.mine and f.duration > best.duration)) then
+				byNameBest[name] = f
 			end
-			if duration and duration > 0 then
-				if id then durationById[id] = duration end
-				if name then
-					durationByName[name] = duration
-					local db = DB()
-					if db then
-						db.durations = db.durations or {}
-						db.durations[name] = duration
-					end
+		end
+	end
+	for _, f in ipairs(found) do
+		local id, inst = f.id, f.inst
+		local name = f.name and byNameBest[f.name] == f and f.name or nil
+		if id then ids[id] = f.expires end
+		if name then names[name] = f.expires end
+		if inst then
+			if id then insts[id] = inst end
+			if name then instNames[name] = inst end
+			-- the other one's name stays out: its end mustn't end this one's timer
+			owners[inst] = { id = id, name = name }
+		end
+		if f.duration > 0 then
+			if id then durationById[id] = f.duration end
+			-- a name's full duration comes from a spell you know once one was seen
+			if name and (f.mine or not durationKnown[name]) then
+				durationByName[name] = f.duration
+				if f.mine then durationKnown[name] = true end
+				local db = DB()
+				if db then
+					db.durations = db.durations or {}
+					db.durations[name] = f.duration
 				end
 			end
 		end
@@ -426,7 +510,7 @@ end
 local function AtSelf(target, spellId)
 	if Secret(target) then
 		local spell = spellId and not Secret(spellId) and SpellName(spellId)
-		if SelfOnly(spellId) or (spell and not Secret(spell) and Kind(spell)) then return true end
+		if SelfOnly(spellId) or (spell and not Secret(spell) and SelfKind(spell)) then return true end
 		local exists, friend, me = UnitExists("target"), UnitIsFriend("player", "target"), UnitIsUnit("target", "player")
 		if not Secret(exists) and not exists then return true end
 		if not Secret(friend) and not friend then return true end
@@ -459,6 +543,7 @@ local function Recast(castGUID, spellId)
 	if Secret(spellId) then return Log("secret spell") end
 	local name = SpellName(spellId)
 	if Secret(name) then name = nil end
+	if not Known(spellId) then return Log(spellId, name, "- not a spell of yours (a proc)") end
 	local now = GetTime()
 	castAt[spellId] = now
 	if name then castAt[name] = now end
@@ -466,7 +551,7 @@ local function Recast(castGUID, spellId)
 	-- spell that can go on you alone, like a seal, counts as yours
 	local target = sent and sent.target
 	local atSelf
-	if sent then atSelf = AtSelf(target, spellId) else atSelf = SelfOnly(spellId) or (name ~= nil and Kind(name) ~= nil) end
+	if sent then atSelf = AtSelf(target, spellId) else atSelf = SelfOnly(spellId) or SelfKind(name) end
 	if name and atSelf then
 		EndOthers(name)
 		Queue()
@@ -476,7 +561,7 @@ local function Recast(castGUID, spellId)
 	local shownTarget = not sent and "<unknown>" or Secret(target) and "<secret>" or target
 	if not duration then
 		-- a seal, aura or aspect not seen out of combat yet: on, time not known
-		if name and atSelf and Kind(name) then
+		if name and atSelf and SelfKind(name) then
 			byName[name] = UNKNOWN
 			Queue()
 			return Log(spellId, name, "to", shownTarget, "- on, time not known yet")
@@ -484,6 +569,12 @@ local function Recast(castGUID, spellId)
 		return Log(spellId, name, "to", shownTarget, "- no known duration")
 	end
 	if not atSelf then return Log(spellId, name, "to", shownTarget, "- not at you") end
+	if Varies(spellId, name) then
+		byId[spellId] = UNKNOWN
+		if name then byName[name] = UNKNOWN end
+		Queue()
+		return Log(spellId, name, "to", shownTarget, "- on, its time depends on combo points")
+	end
 	Log(spellId, name, "to", shownTarget, "- restarted at", duration)
 	local expires = now + duration
 	byId[spellId] = expires
@@ -541,7 +632,7 @@ ns.OnChange(Update)
 local function Restart(owner)
 	local duration = (owner.id and durationById[owner.id]) or (owner.name and (durationByName[owner.name] or SavedDuration(owner.name)))
 	if not duration then return end
-	local expires = GetTime() + duration
+	local expires = Varies(owner.id, owner.name) and UNKNOWN or GetTime() + duration
 	if owner.id then byId[owner.id] = expires end
 	if owner.name then byName[owner.name] = expires end
 end
@@ -579,7 +670,8 @@ function ns.FollowAuraUpdate(info)
 				if Visible(inst) and inst then
 					local owner = spellOfInst[inst]
 					if not owner and Visible(id) and id and durationById[id] then
-						owner = { id = id, name = SpellName(id) }
+						-- a buff a proc put on you keeps to its own ID, not the name it shares
+						owner = { id = id, name = Known(id) and SpellName(id) or nil }
 						spellOfInst[inst] = owner
 						instById[id] = inst
 					end
