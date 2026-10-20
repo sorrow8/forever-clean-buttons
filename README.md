@@ -18,7 +18,7 @@ Forever Clean Buttons makes your action bars square and sharp with a thin pixel 
 
 Made for Dominos. It also works with the default bars; for the cleanest look there, turn on "Hide Bar Art" for the main bar in Edit Mode.
 
-**Install:** unzip the `ForeverCleanButtons` folder into `World of Warcraft/_forever_/Interface/AddOns/` and type `/reload` in the game.
+**Install:** unzip the `ForeverCleanButtons` folder into `World of Warcraft/_forever_/Interface/AddOns/`. If the game is already running, type `/reload`.
 
 MIT license.
 
