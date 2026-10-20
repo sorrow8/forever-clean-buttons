@@ -16,7 +16,7 @@ Forever Clean Buttons makes your action bars square and sharp with a thin pixel 
 - Minimap button
 - Settings: `/fcb`
 
-Made for Dominos. It also works with the default bars; for the cleanest look there, turn on "Hide Bar Art" for the main bar in Edit Mode.
+Dominos is recommended: it keeps the bars minimal without replacing the whole interface. It works with the default bars too; there, turn on "Hide Bar Art" for the main bar in Edit Mode to remove the gryphons and the frame around it. That's optional, but it gives the cleanest look.
 
 **Download:** [CurseForge](https://www.curseforge.com/wow/addons/forever-clean-buttons) or the [latest GitHub release](https://github.com/sorrow8/forever-clean-buttons/releases/latest).
 
