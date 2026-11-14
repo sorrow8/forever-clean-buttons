@@ -62,6 +62,7 @@ function ns.Reset()
 	local keep = {
 		win = db.win, language = db.language, welcomed = db.welcomed,
 		exclusive = db.exclusive, exclusiveSeen = db.exclusiveSeen, exclusiveVersion = db.exclusiveVersion,
+		ends = db.ends, endsSeen = db.endsSeen,
 		durations = db.durations,
 	}
 	wipe(db)

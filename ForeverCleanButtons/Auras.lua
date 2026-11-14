@@ -24,9 +24,11 @@ local _, ns = ...
 -- Some buffs replace each other: only one seal can be on you. The game
 -- doesn't tell us in combat that the old one went, so the addon learns it out
 -- of combat (a buff of yours that ends early just after you put another one
--- on yourself that wasn't on you, seen twice, is replaced by it) and
--- remembers it. In combat, casting one of them then ends the timers of the
--- others. /fcb forget clears what was learned.
+-- on yourself that wasn't on you, seen twice, is ended by it) and remembers
+-- it. In combat, casting that one then ends the timer of the other.
+-- What is learned is one pair, one way: any cast ends a Drink, so a Drink is
+-- ended by a seal and by Holy Shield, and that says nothing about the seal
+-- and Holy Shield. /fcb forget clears what was learned.
 --
 -- A button whose buff is on you gets a coloured frame.
 
@@ -85,8 +87,11 @@ local function SavedDuration(name)
 	return db and db.durations and db.durations[name]
 end
 
--- Buffs that replace each other, by spell name (all ranks), saved:
--- [spell name] = group number.
+-- Groups of buffs that replace each other, as versions up to 1.2.7 learned
+-- them, by spell name (all ranks), saved: [spell name] = group number. A
+-- group ties every buff in it to every other, so one buff that any cast ends
+-- (a Drink) could pull unrelated buffs together. They are still honoured,
+-- nothing is added to them, and /fcb forget clears them.
 local function Groups()
 	local db = DB()
 	if not db then return nil end
@@ -160,57 +165,49 @@ local function SelfKind(name)
 	return kind ~= nil and SELF_ONLY[kind] == true
 end
 
--- One more sighting of two buffs replacing each other, saved till it is
--- trusted: ["a\nb"] = times. True once seen often enough; seals, auras and
--- aspects are trusted at once.
-local function Seen(a, b)
-	if not Groups() then return false end
-	local kind = Kind(a)
-	if kind and kind == Kind(b) then return true end
+-- One more sighting of buff a ending early just after b was cast. Saved till
+-- it is trusted: db.endsSeen["a\nb"] = times; then db.ends[b][a] = true:
+-- casting b ends a. One way only, and it ties no third buff in. Buffs of one
+-- kind (seals, auras, aspects) end each other by rule, with nothing to learn.
+local function Note(a, b)
 	local db = DB()
-	db.exclusiveSeen = db.exclusiveSeen or {}
-	local key = a < b and a .. "\n" .. b or b .. "\n" .. a
-	local times = (db.exclusiveSeen[key] or 0) + 1
+	if not db or a == b then return end
+	local kind = Kind(a)
+	if kind and kind == Kind(b) then return end
+	db.ends = db.ends or {}
+	if db.ends[b] and db.ends[b][a] then return end
+	db.endsSeen = db.endsSeen or {}
+	local key = a .. "\n" .. b
+	local times = (db.endsSeen[key] or 0) + 1
 	if times < LEARN_SEEN then
-		db.exclusiveSeen[key] = times
-		return false
+		db.endsSeen[key] = times -- once may be chance (a proc used up)
+		return
 	end
-	db.exclusiveSeen[key] = nil -- the group keeps it from now on
-	return true
+	db.endsSeen[key] = nil
+	db.ends[b] = db.ends[b] or {}
+	db.ends[b][a] = true
 end
 
--- /fcb forget: a wrong group would keep ending the wrong timers.
+-- /fcb forget: a wrong pair or group would keep ending the wrong timers.
 function ns.ForgetAuraGroups()
 	local db = DB()
 	if not db then return end
 	db.exclusive, db.exclusiveSeen = {}, {}
+	db.ends, db.endsSeen = {}, {}
 	wipe(replaced)
 end
 
-local function Join(a, b)
-	local groups = Groups()
-	if not groups or a == b then return end
-	local ga, gb = groups[a], groups[b]
-	if ga and ga == gb then return end
-	if not (ga or gb) then
-		local top = 0
-		for _, g in pairs(groups) do top = math.max(top, g) end
-		ga = top + 1
-	end
-	ga = ga or gb
-	if gb then
-		for name, g in pairs(groups) do if g == gb then groups[name] = ga end end
-	end
-	groups[a], groups[b] = ga, ga
-end
-
--- You cast one of a group: the others are gone.
+-- You cast a buff: the ones it ends are gone (learned pairs, one kind, and
+-- the groups older versions learned).
 local function EndOthers(name)
 	local groups, kind = Groups(), Kind(name)
 	local group = groups and groups[name]
+	local db = DB()
+	local ends = db and db.ends and db.ends[name]
 	local function Replaced(other)
 		if other == name then return false end
-		return (group ~= nil and groups[other] == group) or (kind ~= nil and Kind(other) == kind)
+		return (ends ~= nil and ends[other] == true) or (group ~= nil and groups[other] == group)
+			or (kind ~= nil and Kind(other) == kind)
 	end
 	for other in pairs(byName) do
 		if Replaced(other) then byName[other] = nil end
@@ -235,7 +232,7 @@ local function Learn(names, now)
 	for i = #replaced, 1, -1 do
 		local r = replaced[i]
 		if names[r.b] then
-			if Seen(r.a, r.b) then Join(r.a, r.b) end
+			Note(r.a, r.b)
 			table.remove(replaced, i)
 		elseif now - r.at > LEARN_WINDOW then
 			table.remove(replaced, i)
@@ -244,6 +241,11 @@ local function Learn(names, now)
 end
 
 -- Reading -----------------------------------------------------------------------
+
+-- Whether the timers held now were read out of combat, with no fight since.
+-- Timers carried out of a fight are guesses (a seal used up by Judgement may
+-- still count down), and a guess that turns out gone must teach nothing.
+local clean = false
 
 -- The game can hide aura data out of combat too (a battleground, an arena, a
 -- keystone): then the last known timers stay and keep counting down.
@@ -312,9 +314,10 @@ local function Scan()
 		for k, v in pairs(instById) do if insts[k] == nil then insts[k] = v end end
 		for k, v in pairs(instByName) do if instNames[k] == nil then instNames[k] = v end end
 		for k, v in pairs(spellOfInst) do if owners[k] == nil then owners[k] = v end end
-	else
+	elseif clean then
 		Learn(names, GetTime())
 	end
+	clean = not hidden
 	byId, byName, instById, instByName, spellOfInst = ids, names, insts, instNames, owners
 	return true
 end
@@ -333,7 +336,27 @@ local function ButtonSpell(button)
 	if kind == "macro" and subType == "spell" then return id end
 end
 
--- When the button's buff ends (nil: not known) and whether it is on you.
+-- Buffs whose spell has a cooldown as long as the buff: the game already
+-- counts that cooldown down on the button, and two numbers would overlap. The
+-- button keeps its coloured frame, without the time. By spell ID, so the name
+-- is the client's own language.
+local NO_TIME = { 20925 } -- Holy Shield
+local noTimeNames
+
+local function NoTime(name)
+	if not name then return false end
+	if not noTimeNames then
+		noTimeNames = {}
+		for _, id in ipairs(NO_TIME) do
+			local n = SpellName(id)
+			if n and not Secret(n) then noTimeNames[n] = true end
+		end
+	end
+	return noTimeNames[name] == true
+end
+
+-- When the button's buff ends (nil: not known), whether it is on you, and
+-- whether its time is left off (see NO_TIME).
 -- By spell ID or by name, whichever is later: a recast of another rank in
 -- combat only updates the name.
 local function Expires(button)
@@ -343,7 +366,7 @@ local function Expires(button)
 	if Secret(name) then name = nil end
 	local a, b = byId[spell], name and byName[name]
 	local known = (a and b) and math.max(a, b) or a or b
-	return known, known ~= nil and known > GetTime()
+	return known, known ~= nil and known > GetTime(), NoTime(name)
 end
 
 -- Showing ----------------------------------------------------------------------------
@@ -433,11 +456,11 @@ Update = function()
 	local now = GetTime()
 	local soonest
 	for button, fs in pairs(texts) do
-		local expires, isOn
-		if on and button:IsVisible() then expires, isOn = Expires(button) end
+		local expires, isOn, noTime
+		if on and button:IsVisible() then expires, isOn, noTime = Expires(button) end
 		Glow(button, isOn)
 		local left = expires and expires - now
-		if left == UNKNOWN then
+		if left == UNKNOWN or noTime then
 			fs:Hide() -- on: the frame shows it, there's no time to show
 		elseif left and left > 0 then
 			local text = ns.FormatAuraTime(left)
@@ -605,6 +628,10 @@ frame:SetScript("OnEvent", function(_, event, unit, a, b, c)
 			return Queue()
 		end
 		Refresh()
+	elseif event == "PLAYER_REGEN_DISABLED" then
+		clean = false -- from here on the timers are guesses
+		wipe(replaced)
+		Queue()
 	elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_ENABLED" then
 		-- casts that never reported back; one still going keeps its target
 		local now = GetTime()
@@ -620,7 +647,7 @@ for _, event in ipairs({ "UNIT_AURA", "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUC
 	frame:RegisterUnitEvent(event, "player")
 end
 for _, event in ipairs({
-	"PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED",
+	"PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
 	"ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM",
 }) do
 	frame:RegisterEvent(event)
@@ -715,7 +742,11 @@ function ns.DebugAuras()
 	for id, inst in pairs(instById) do ns.Print(("instance: %s %s #%s"):format(id, tostring(SpellName(id)), inst)) end
 	ns.Print("last aura update: " .. lastUpdate)
 	for id, d in pairs(durationById) do ns.Print(("known: %s %s = %ss"):format(id, tostring(SpellName(id)), d)) end
-	for name, g in pairs(Groups() or {}) do ns.Print(("replace each other (%d): %s"):format(g, name)) end
+	for name, g in pairs(Groups() or {}) do ns.Print(("old group (%d): %s"):format(g, name)) end
+	local db = DB()
+	for b, list in pairs(db and db.ends or {}) do
+		for a in pairs(list) do ns.Print(("%s ends %s"):format(b, a)) end
+	end
 	for i, line in ipairs(castLog) do ns.Print(i .. ". " .. line) end
 	if not castLog[1] then ns.Print("no casts of your own buffs seen yet") end
 end

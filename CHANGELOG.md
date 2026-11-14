@@ -1,3 +1,8 @@
+# 1.2.8
+
+- Holy Shield shows no time on its button: the game counts down its cooldown there already, and the two numbers overlapped. The coloured frame stays.
+- Fix: casting one buff could end the timer of an unrelated one, like Holy Shield ending a seal's. A Drink ends on any cast, and it tied every buff cast while drinking into one group. Now each pair is learned on its own and one way only, and nothing is learned from the timers a fight leaves behind. If a timer still drops, /fcb forget clears what older versions learned.
+
 # 1.2.7
 
 - Seal of Command, Lightning Shield, Thorns and other buffs whose hits set off a spell of the same name no longer jump back to full time each time they go off.
