@@ -1,3 +1,7 @@
+# 1.2.9
+
+- An ability that waits for your next swing (Heroic Strike, Cleave, Maul, Raptor Strike) keeps its button lit like a held one until it goes off, also from a macro.
+
 # 1.2.8
 
 - Holy Shield shows no time on its button: the game counts down its cooldown there already, and the two numbers overlapped. The coloured frame stays.

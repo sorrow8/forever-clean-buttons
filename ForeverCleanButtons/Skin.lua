@@ -240,6 +240,63 @@ local function Highlight(button, inner)
 	Fit(button, hl, inner)
 end
 
+-- An ability waiting for the next swing (Heroic Strike, Cleave, Maul, Raptor
+-- Strike) is pressed once and goes off later. Until then its button stays lit
+-- like a held one. A spell being cast and auto attack keep their gold outline
+-- only.
+local function Secret(v) return issecretvalue ~= nil and issecretvalue(v) end
+
+-- The spell an action slot would cast now: its own, or the one its macro shows.
+local function ActionSpell(action)
+	local kind, id, sub = GetActionInfo(action)
+	if Secret(kind) or Secret(id) then return end
+	if kind == "spell" then return id end
+	if kind == "macro" then
+		if sub == "spell" then return id end
+		return GetMacroSpell and GetMacroSpell(id) or nil
+	end
+end
+
+local function Waiting(button, checked)
+	local action = button.action
+	if type(action) ~= "number" or action < 1 or not C_ActionBar then return false end
+	if Secret(checked) or Secret(action) then return false end
+	local ok, on = pcall(function()
+		if not HasAction(action) then return false end
+		if C_ActionBar.IsAttackAction(action) or C_ActionBar.IsAutoRepeatAction(action) then return false end
+		local spell = ActionSpell(action)
+		local current = checked or C_ActionBar.IsCurrentAction(action)
+		if not current and spell then current = C_Spell.IsCurrentSpell(spell) end
+		if not current then return false end
+		-- a spell with a cast time or a channel is under way, not waiting
+		local cast = select(9, UnitCastingInfo("player"))
+		local channel = select(8, UnitChannelInfo("player"))
+		if cast ~= nil or channel ~= nil then
+			if spell == nil or Secret(cast) or Secret(channel) then return false end
+			if cast == spell or channel == spell then return false end
+		end
+		return true
+	end)
+	return ok and on == true
+end
+
+local function Queued(button, checked)
+	local p = parts[button]
+	if not p then return end
+	local on = p.skinned and Active(button) and Waiting(button, checked)
+	if on and not p.queued then
+		p.queued = button:CreateTexture(nil, "ARTWORK", nil, 1)
+		p.queued:SetColorTexture(1, 1, 1, 0.3)
+		p.queued:SetBlendMode("ADD")
+	end
+	if not p.queued then return end
+	if on then
+		p.queued:ClearAllPoints()
+		p.queued:SetAllPoints(p.inner)
+	end
+	p.queued:SetShown(on)
+end
+
 -- Styles -------------------------------------------------------------------------
 
 local STYLE = {}
@@ -271,6 +328,8 @@ function STYLE.action(button)
 	Fit(button, button.cooldown, inner)
 	Fit(button, button.lossOfControlCooldown, inner)
 	Fit(button, button.chargeCooldown, inner)
+
+	if button.GetChecked then Queued(button, button:GetChecked()) end
 end
 
 -- Bag pictures, the empty slot placeholder included, are cropped like any
@@ -369,6 +428,7 @@ local function Unskin(button)
 	end
 	p.outer:Hide()
 	p.inner:Hide()
+	if p.queued then p.queued:Hide() end
 
 	-- The snapshot is from when the skin went on; the stock art may have changed
 	-- since (Edit Mode's "Hide Bar Art"). Let the game lay its current art again.
@@ -409,6 +469,8 @@ local function Hook(button)
 		for _, method in ipairs({ "Show", "Hide", "SetShown" }) do
 			hooksecurefunc(button.icon, method, Refill)
 		end
+		-- the game sets this on every change of what is being cast or queued
+		if button.SetChecked then hooksecurefunc(button, "SetChecked", Queued) end
 	elseif kind == "bag" then
 		if button.UpdateTextures then hooksecurefunc(button, "UpdateTextures", Again) end
 		local function Icon()
@@ -520,6 +582,36 @@ function ns.InitSkin()
 		HookIf(_G[name], "UpdateSystemSettingIconSize", function() ns.ApplyAll() end)
 		HookIf(_G[name], "UpdateSystemSettingSize", function() ns.ApplyAll() end)
 	end
+
+	-- What is queued for the next swing changes without the button being told
+	-- every time, so every shown action button is asked again on these events
+	-- and once more a moment later.
+	local function Recheck()
+		for button, kind in pairs(kinds) do
+			if kind == "action" and button.GetChecked and button:IsVisible() then
+				Queued(button, button:GetChecked())
+			end
+		end
+	end
+	local queue = CreateFrame("Frame")
+	for _, event in ipairs({ "ACTIONBAR_UPDATE_STATE", "CURRENT_SPELL_CAST_CHANGED", "PLAYER_TARGET_CHANGED",
+		"PLAYER_REGEN_ENABLED" }) do
+		queue:RegisterEvent(event)
+	end
+	for _, event in ipairs({ "UNIT_SPELLCAST_SENT", "UNIT_SPELLCAST_SUCCEEDED", "UNIT_SPELLCAST_FAILED",
+		"UNIT_SPELLCAST_FAILED_QUIET", "UNIT_SPELLCAST_INTERRUPTED" }) do
+		queue:RegisterUnitEvent(event, "player")
+	end
+	local pending = false
+	queue:SetScript("OnEvent", function()
+		Recheck()
+		if pending then return end
+		pending = true
+		C_Timer.After(0.15, function()
+			pending = false
+			Recheck()
+		end)
+	end)
 
 	local watcher = CreateFrame("Frame")
 	watcher:RegisterEvent("UI_SCALE_CHANGED")
